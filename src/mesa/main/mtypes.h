@@ -4133,6 +4133,13 @@ struct gl_constants
    /** GL_ARB_get_program_binary */
    GLuint NumProgramBinaryFormats;
 
+   /** GL_NV_conservative_raster */
+   GLuint MaxSubpixelPrecisionBiasBits;
+
+   /** GL_NV_conservative_raster_dilate */
+   GLfloat ConservativeRasterDilateRange[2];
+   GLfloat ConservativeRasterDilateGranularity;
+
    /** Is the drivers uniform storage packed or padded to 16 bytes. */
    bool PackedDriverUniformStorage;
 };
@@ -4347,6 +4354,10 @@ struct gl_extensions
    GLboolean NV_texture_env_combine4;
    GLboolean NV_texture_rectangle;
    GLboolean NV_vdpau_interop;
+   GLboolean NV_conservative_raster;
+   GLboolean NV_conservative_raster_dilate;
+   GLboolean NV_conservative_raster_pre_snap_triangles;
+   GLboolean NV_conservative_raster_pre_snap;
    GLboolean NVX_gpu_memory_info;
    GLboolean TDFX_texture_compression_FXT1;
    GLboolean OES_EGL_image;
@@ -4621,6 +4632,16 @@ struct gl_driver_flags
    uint64_t NewIntelConservativeRasterization;
 
    /**
+    * gl_context::NvConservativeRasterization
+    */
+   uint64_t NewNvConservativeRasterization;
+
+   /**
+    * gl_context::NvConservativeRasterMode/NvConservativeRasterDilate
+    */
+   uint64_t NewNvConservativeRasterizationParams;
+
+   /**
     * gl_context::Scissor::WindowRects
     */
    uint64_t NewWindowRectangles;
@@ -4688,7 +4709,7 @@ struct gl_driver_flags
    /** gl_context::PolygonStipple */
    uint64_t NewPolygonStipple;
 
-   /** gl_context::ViewportArray */
+   /** gl_context::ViewportArray/NvSubpixelPrecisionBias */
    uint64_t NewViewport;
 
    /** Shader constants (uniforms, program parameters, state constants) */
@@ -4928,6 +4949,7 @@ struct gl_context
    struct gl_texture_attrib	Texture;	/**< Texture attributes */
    struct gl_transform_attrib	Transform;	/**< Transformation attributes */
    struct gl_viewport_attrib	ViewportArray[MAX_VIEWPORTS];	/**< Viewport attributes */
+   GLuint			SubpixelPrecisionBias[2];	/**< Viewport attributes */
    /*@}*/
 
    /** \name Client attribute stack */
@@ -5108,7 +5130,10 @@ struct gl_context
    GLboolean TextureFormatSupported[MESA_FORMAT_COUNT];
 
    GLboolean RasterDiscard;  /**< GL_RASTERIZER_DISCARD */
-   GLboolean IntelConservativeRasterization; /**< GL_INTEL_CONSERVATIVE_RASTERIZATION */
+   GLboolean IntelConservativeRasterization; /**< GL_CONSERVATIVE_RASTERIZATION_INTEL */
+   GLboolean ConservativeRasterization; /**< GL_CONSERVATIVE_RASTERIZATION_NV */
+   GLfloat ConservativeRasterDilate;
+   GLenum16 ConservativeRasterMode;
 
    /** Does glVertexAttrib(0) alias glVertex()? */
    bool _AttribZeroAliasesVertex;
