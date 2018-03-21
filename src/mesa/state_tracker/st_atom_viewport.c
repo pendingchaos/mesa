@@ -50,8 +50,12 @@ st_update_viewport( struct st_context *st )
    for (i = 0; i < st->state.num_viewports; i++) {
       float *scale = st->state.viewport[i].scale;
       float *translate = st->state.viewport[i].translate;
+      uint16_t* subpixel_precision = st->state.viewport[i].subpixel_precision;
 
       _mesa_get_viewport_xform(ctx, i, scale, translate);
+
+      subpixel_precision[0] = ctx->SubpixelPrecisionBias[0];
+      subpixel_precision[1] = ctx->SubpixelPrecisionBias[1];
 
       /* _NEW_BUFFERS */
       /* Drawing to a window where the coordinate system is upside down. */
