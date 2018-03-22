@@ -339,6 +339,13 @@ nvc0_validate_viewport(struct nvc0_context *nvc0)
       BEGIN_NVC0(push, NVC0_3D(DEPTH_RANGE_NEAR(i)), 2);
       PUSH_DATAf(push, zmin);
       PUSH_DATAf(push, zmax);
+
+      /* Only applies when conservative rasterization is enabled */
+      if (nvc0->screen->base.class_3d >= GM200_3D_CLASS) {
+         uint16_t prec_bias = vp->subpixel_precision[0];
+         prec_bias |= vp->subpixel_precision[1] << 8;
+         IMMED_NVC0(push, NVC0_3D(SUBPIXEL_PRECISION(i)), prec_bias);
+      }
    }
    nvc0->viewports_dirty = 0;
 }

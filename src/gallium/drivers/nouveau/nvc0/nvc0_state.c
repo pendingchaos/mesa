@@ -324,6 +324,26 @@ nvc0_rasterizer_state_create(struct pipe_context *pipe,
 
     SB_IMMED_3D(so, PIXEL_CENTER_INTEGER, !cso->half_pixel_center);
 
+    if (class_3d >= GM200_3D_CLASS) {
+        if (cso->conservative_raster_mode != PIPE_CONSERVATIVE_RASTER_OFF) {
+            uint32_t value = (uint32_t)(cso->conservative_raster_dilate*4)<<23;
+            bool post_snap = cso->conservative_raster_mode ==
+                PIPE_CONSERVATIVE_RASTER_POST_SNAP;
+            if (post_snap || class_3d<GP100_3D_CLASS) value |= 0x2000000;
+
+            SB_IMMED_3D(so, CONSERVATIVE_RASTER, 1);
+
+            SB_DATA(so, NVC0_FIFO_PKHDR_SQ(SUBC_3D(NVC0_GRAPH_SCRATCH(0)), 3));
+            SB_DATA(so, 0);
+            SB_DATA(so, value);
+            SB_DATA(so, 0x3800000); //Write mask
+            SB_BEGIN_3D(so, FIRMWARE(4), 1);
+            SB_DATA    (so, 0x418800);
+        } else {
+            SB_IMMED_3D(so, CONSERVATIVE_RASTER, 0);
+        }
+    }
+
     assert(so->size <= ARRAY_SIZE(so->state));
     return (void *)so;
 }
