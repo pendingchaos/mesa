@@ -100,6 +100,8 @@ files_libmesa_common = files(
   'main/condrender.c',
   'main/condrender.h',
   'main/config.h',
+  'main/conservativeraster.c',
+  'main/conservativeraster.h',
   'main/context.c',
   'main/context.h',
   'main/convolve.c',
