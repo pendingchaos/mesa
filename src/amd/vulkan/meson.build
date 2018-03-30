@@ -131,11 +131,11 @@ libvulkan_radeon = shared_library(
   'vulkan_radeon',
   [libradv_files, radv_entrypoints, radv_extensions_c, vk_format_table_c, sha1_h],
   include_directories : [
-    inc_common, inc_amd, inc_amd_common, inc_compiler, inc_vulkan_util,
+    inc_common, inc_amd, inc_amd_compiler, inc_amd_common, inc_compiler, inc_vulkan_util,
     inc_vulkan_wsi,
   ],
   link_with : [
-    libamd_common, libamdgpu_addrlib, libvulkan_util, libvulkan_wsi,
+    libaco, libamd_common, libamdgpu_addrlib, libvulkan_util, libvulkan_wsi,
     libmesa_util,
   ],
   dependencies : [
