@@ -47,6 +47,8 @@
 #include "util/debug.h"
 #include "ac_exp_param.h"
 
+#include "aco_interface.h"
+
 #include "util/string_buffer.h"
 
 static const struct nir_shader_compiler_options nir_options = {
@@ -599,6 +601,8 @@ shader_variant_create(struct radv_device *device,
 		radv_compile_nir_shader(tm, &binary, &variant->config,
 					&variant->info, shaders, shader_count,
 					options);
+		if (!module->nir)
+			aco_compile_shader(shaders[0]);
 	}
 
 	LLVMDisposeTargetMachine(tm);
