@@ -73,7 +73,8 @@ static const struct nir_shader_compiler_options nir_options = {
 	.lower_ffma = true,
 	.lower_fpow = true,
 	.vs_inputs_dual_locations = true,
-	.max_unroll_iterations = 32
+	.max_unroll_iterations = 32,
+	.use_interpolated_input_intrinsics = true,
 };
 
 VkResult radv_CreateShaderModule(
