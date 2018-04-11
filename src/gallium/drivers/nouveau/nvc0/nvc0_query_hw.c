@@ -374,28 +374,10 @@ nvc0_hw_get_query_result_resource(struct nvc0_context *nvc0,
    struct nouveau_pushbuf *push = nvc0->base.pushbuf;
    struct nvc0_hw_query *hq = nvc0_hw_query(q);
    struct nv04_resource *buf = nv04_resource(resource);
-   unsigned qoffset = 0, stride;
    bool predicate = false;
-   uint32_t arg;
+   uint32_t arg = result_type >= PIPE_QUERY_TYPE_I64 ? 1 : 0;
 
    assert(!hq->funcs || !hq->funcs->get_query_result);
-
-   if (index == -1) {
-      /* TODO: Use a macro to write the availability of the query */
-      if (hq->state != NVC0_HW_QUERY_STATE_READY)
-         nvc0_hw_query_update(nvc0->screen->base.client, q);
-      uint32_t ready[2] = {hq->state == NVC0_HW_QUERY_STATE_READY};
-      nvc0->base.push_cb(&nvc0->base, buf, offset,
-                         result_type >= PIPE_QUERY_TYPE_I64 ? 2 : 1,
-                         ready);
-
-      util_range_add(&buf->valid_buffer_range, offset,
-                     offset + (result_type >= PIPE_QUERY_TYPE_I64 ? 8 : 4));
-
-      nvc0_resource_validate(buf, NOUVEAU_BO_WR);
-
-      return;
-   }
 
    switch (q->type) {
    case PIPE_QUERY_OCCLUSION_PREDICATE:
@@ -406,7 +388,6 @@ nvc0_hw_get_query_result_resource(struct nvc0_context *nvc0,
       break;
    }
 
-   arg = result_type >= PIPE_QUERY_TYPE_I64 ? 1 : 0;
    /* Only clamp if the output is 32-bit or a predicate, we don't bother
     * clamping 64-bit outputs */
    if ((result_type<PIPE_QUERY_TYPE_I64 || predicate) && index!=-1)
@@ -424,10 +405,13 @@ nvc0_hw_get_query_result_resource(struct nvc0_context *nvc0,
    if (wait && hq->state != NVC0_HW_QUERY_STATE_READY)
       nvc0_hw_query_fifo_wait(nvc0, q);
 
-   nouveau_pushbuf_space(push, 32, 2, 0);
-   PUSH_REFN (push, hq->bo, NOUVEAU_BO_GART | NOUVEAU_BO_RD);
-   PUSH_REFN (push, buf->bo, buf->domain | NOUVEAU_BO_WR);
-   BEGIN_1IC0(push, NVC0_3D(MACRO_QUERY_BUFFER_WRITE), 10);
+   nouveau_pushbuf_space(push, 20, 0, 5);
+   PUSH_REFN(push, hq->bo, NOUVEAU_BO_GART | NOUVEAU_BO_RD);
+   PUSH_REFN(push, buf->bo, buf->domain | NOUVEAU_BO_WR);
+   if (index == -1)
+      BEGIN_1IC0(push, NVC0_3D(MACRO_QUERY_BUFFER_WRITE_AVAIL), 5);
+   else
+      BEGIN_1IC0(push, NVC0_3D(MACRO_QUERY_BUFFER_WRITE), 10);
    PUSH_DATA(push, arg);
 
    if (wait || hq->state == NVC0_HW_QUERY_STATE_READY) {
@@ -443,56 +427,62 @@ nvc0_hw_get_query_result_resource(struct nvc0_context *nvc0,
                            4 | NVC0_IB_ENTRY_1_NO_PREFETCH);
    }
 
-   switch (q->type) {
-   case PIPE_QUERY_SO_STATISTICS:
-      stride = 2;
-      break;
-   case PIPE_QUERY_PIPELINE_STATISTICS:
-      stride = 12;
-      break;
-   case PIPE_QUERY_TIME_ELAPSED:
-   case PIPE_QUERY_TIMESTAMP:
-      qoffset = 8;
-      /* fallthrough */
-   default:
-      assert(index == 0);
-      stride = 1;
-      break;
-   }
+   if (index != -1) {
+      unsigned qoffset = 0, stride;
 
-   /* We need to compute the difference between 2 values, and then store the
-    * result as either a 32- or 64-bit value. As such let's treat all inputs
-    * as 64-bit (and just push an extra 0 for the 32-bit ones), and clamp
-    * the result to an limit if it's 32 bit or a predicate.
-    */
-   if (hq->is64bit || qoffset) {
-      nouveau_pushbuf_data(push, hq->bo, hq->offset + qoffset + 16 * index,
-                           8 | NVC0_IB_ENTRY_1_NO_PREFETCH);
-      if (q->type == PIPE_QUERY_TIMESTAMP) {
-         PUSH_DATA(push, 0);
-         PUSH_DATA(push, 0);
-      } else {
-         nouveau_pushbuf_data(push, hq->bo, hq->offset + qoffset +
-                              16 * (index + stride),
-                              8 | NVC0_IB_ENTRY_1_NO_PREFETCH);
+      /* We need to compute the difference between 2 values, and then store the
+       * result as either a 32- or 64-bit value. As such let's treat all inputs
+       * as 64-bit (and just push an extra 0 for the 32-bit ones), and clamp
+       * the result to an limit if it's 32 bit or a predicate.
+       */
+      switch (q->type) {
+      case PIPE_QUERY_SO_STATISTICS:
+         stride = 2;
+         break;
+      case PIPE_QUERY_PIPELINE_STATISTICS:
+         stride = 12;
+         break;
+      case PIPE_QUERY_TIME_ELAPSED:
+      case PIPE_QUERY_TIMESTAMP:
+         qoffset = 8;
+         /* fallthrough */
+      default:
+         assert(index == 0);
+         stride = 1;
+         break;
       }
-   } else {
-      nouveau_pushbuf_data(push, hq->bo, hq->offset + 4,
-                           4 | NVC0_IB_ENTRY_1_NO_PREFETCH);
-      PUSH_DATA(push, 0);
-      nouveau_pushbuf_data(push, hq->bo, hq->offset + 16 + 4,
-                           4 | NVC0_IB_ENTRY_1_NO_PREFETCH);
-      PUSH_DATA(push, 0);
-   }
 
-   if (predicate)
-      PUSH_DATA(push, 0x00000001);
-   else if (result_type == PIPE_QUERY_TYPE_I32)
-      PUSH_DATA(push, 0x7fffffff);
-   else if (result_type == PIPE_QUERY_TYPE_U32)
-      PUSH_DATA(push, 0xffffffff);
-   else
-      PUSH_DATA(push, 0x00000000);
+      /* start and end values */
+      if (hq->is64bit || qoffset) {
+         nouveau_pushbuf_data(push, hq->bo, hq->offset + qoffset + 16 * index,
+                              8 | NVC0_IB_ENTRY_1_NO_PREFETCH);
+         if (q->type == PIPE_QUERY_TIMESTAMP) {
+            PUSH_DATA(push, 0);
+            PUSH_DATA(push, 0);
+         } else {
+            nouveau_pushbuf_data(push, hq->bo, hq->offset + qoffset +
+                                 16 * (index + stride),
+                                 8 | NVC0_IB_ENTRY_1_NO_PREFETCH);
+         }
+      } else {
+         nouveau_pushbuf_data(push, hq->bo, hq->offset + 4,
+                              4 | NVC0_IB_ENTRY_1_NO_PREFETCH);
+         PUSH_DATA(push, 0);
+         nouveau_pushbuf_data(push, hq->bo, hq->offset + 16 + 4,
+                              4 | NVC0_IB_ENTRY_1_NO_PREFETCH);
+         PUSH_DATA(push, 0);
+      }
+
+      /* clamp value */
+      if (predicate)
+         PUSH_DATA(push, 0x00000001);
+      else if (result_type == PIPE_QUERY_TYPE_I32)
+         PUSH_DATA(push, 0x7fffffff);
+      else if (result_type == PIPE_QUERY_TYPE_U32)
+         PUSH_DATA(push, 0xffffffff);
+      else
+         PUSH_DATA(push, 0x00000000);
+   }
 
    PUSH_DATA (push, buf->address + offset);
    PUSH_DATAh(push, buf->address + offset);
