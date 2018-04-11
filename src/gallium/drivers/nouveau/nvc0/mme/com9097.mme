@@ -494,59 +494,72 @@ daic_runout_check:
 
 /* NVC0_3D_MACRO_QUERY_BUFFER_WRITE:
  *
- * This is a combination macro for all of our query buffer object needs.
- * It has the option to clamp results to a configurable amount, as well as
+ * This macro writes out a query's result into a resource.
+ * It has the options to either clamp the result to a configurable amount and
  * to write out one or two words.
  *
  * We use the query engine to write out the values, and expect the query
  * address to point to the right place.
  *
- * arg = clamp value (0 means unclamped). clamped means just 1 written value.
- * parm[0] = LSB of end value
- * parm[1] = MSB of end value
- * parm[2] = LSB of start value
- * parm[3] = MSB of start value
- * parm[4] = desired sequence
- * parm[5] = actual sequence
- * parm[6] = query high address
+ * Also note that although the result availablility is determined at the start,
+ * the macro only exits if the result is unavailable right before clamping.
+ *
+ * arg = write64 | (clamp<<1)
+ * parm[0] = desired sequence
+ * parm[1] = actual sequence
+ * parm[2] = LSB of end value
+ * parm[3] = MSB of end value
+ * parm[4] = LSB of start value
+ * parm[5] = MSB of start value
+ * parm[6] = clamp value
  * parm[7] = query low address
+ * parm[8] = query high address
  */
 .section #mme9097_query_buffer_write
+/* determine result availability */
+   parm $r2
+   parm $r3
+   mov $r6 (sub $r3 $r2)
+   mov $r6 (sbb 0x0 0x0)
+/* calculate result and write high into $r3 and low into $r2 */
    parm $r2
    parm $r3
    parm $r4
-   parm $r5 maddr 0x16c0 /* QUERY_ADDRESS_HIGH */
-   parm $r6
-   parm $r7
-   mov $r6 (sub $r7 $r6) /* actual - desired */
-   mov $r6 (sbb 0x0 0x0) /* if there was underflow, not reached yet */
-   parm $r7
-   exit braz $r6 #qbw_ready
-   parm $r6
-qbw_ready:
+   parm $r5
    mov $r2 (sub $r2 $r4)
-   braz $r1 #qbw_postclamp
    mov $r3 (sbb $r3 $r5)
-   branz annul $r3 #qbw_clamp
-   mov $r4 (sub $r1 $r2)
-   mov $r4 (sbb 0x0 0x0)
-   braz annul $r4 #qbw_postclamp
-qbw_clamp:
-   mov $r2 $r1
-qbw_postclamp:
-   send $r7
-   send $r6
+   braz $r6 #qbw_available
+   parm $r4 /* clamp value */
+   exit parm $r7 /* result not available - drain remaining parameters and exit */
+   parm $r7
+qbw_available:
+   mov $r6 (extrinsrt 0x0 $r1 1 1 0)
+   braz annul $r6 #qbw_write
+   branz $r3 #qbw_doclamp /* clamp if the high word is set */
+   mov $r7 (sub $r4 $r2)
+   mov $r7 (sbb 0x0 0x0)
+   braz annul $r7 #qbw_write
+qbw_doclamp:
+   mov $r2 $r4
+   mov $r3 0x0
+qbw_write:
+   parm $r5
+   parm $r4 maddr 0x16c0 /* QUERY_ADDRESS_HIGH */
+   send $r4
+   send $r5
    send $r2
-   branz $r1 #qbw_done
-   mov $r4 0x1000
-   send (extrinsrt 0x0 $r4 0x0 0x10 0x10)
+   mov $r6 (extrinsrt 0x0 $r1 0 1 0)
+   braz $r6 #qbw_done
+   mov $r7 0x1000
+   send (extrinsrt 0x0 $r7 0 16 16)
+   /* XXX: things seem to mess up if $r6 is replaced with 0x4 in the add */
+   mov $r6 0x4
+   mov $r5 (add $r5 $r6)
+   mov $r4 (adc $r4 0x0)
    maddr 0x16c0 /* QUERY_ADDRESS_HIGH */
-   mov $r5 0x4
-   mov $r6 (add $r6 $r5)
-   mov $r7 (adc $r7 0x0)
-   send $r7
-   send $r6
+   send $r4
+   send $r5
    send $r3
 qbw_done:
-   exit send (extrinsrt 0x0 $r4 0x0 0x10 0x10)
-   maddrsend 0x44
+   exit send (extrinsrt 0x0 $r7 0 16 16)
+   maddrsend 0x44 /* SERIALIZE */
