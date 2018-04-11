@@ -381,6 +381,8 @@ nvc0_hw_get_query_result_resource(struct nvc0_context *nvc0,
    struct nvc0_hw_query *hq = nvc0_hw_query(q);
    struct nv04_resource *buf = nv04_resource(resource);
    unsigned qoffset = 0, stride;
+   bool predicate = false;
+   uint32_t arg;
 
    assert(!hq->funcs || !hq->funcs->get_query_result);
 
@@ -401,18 +403,27 @@ nvc0_hw_get_query_result_resource(struct nvc0_context *nvc0,
       return;
    }
 
+   switch (q->type) {
+   case PIPE_QUERY_OCCLUSION_PREDICATE:
+   case PIPE_QUERY_OCCLUSION_PREDICATE_CONSERVATIVE:
+   case PIPE_QUERY_SO_OVERFLOW_PREDICATE:
+   case PIPE_QUERY_SO_OVERFLOW_ANY_PREDICATE:
+      predicate = true;
+      break;
+   }
+
+   arg = result_type >= PIPE_QUERY_TYPE_I64 ? 1 : 0;
+   /* Only clamp if the output is 32-bit or a predicate, we don't bother
+    * clamping 64-bit outputs */
+   if ((result_type<PIPE_QUERY_TYPE_I64 || predicate) && index!=-1)
+      arg |= 1 << 1;
+
    /* If the fence guarding this query has not been emitted, that makes a lot
     * of the following logic more complicated.
     */
    if (hq->is64bit && hq->fence->state < NOUVEAU_FENCE_STATE_EMITTED)
       nouveau_fence_emit(hq->fence);
 
-   /* We either need to compute a 32- or 64-bit difference between 2 values,
-    * and then store the result as either a 32- or 64-bit value. As such let's
-    * treat all inputs as 64-bit (and just push an extra 0 for the 32-bit
-    * ones), and have one macro that clamps result to i32, u32, or just
-    * outputs the difference (no need to worry about 64-bit clamping).
-    */
    if (hq->state != NVC0_HW_QUERY_STATE_READY)
       nvc0_hw_query_update(nvc0->screen->base.client, q);
 
@@ -425,22 +436,20 @@ nvc0_hw_get_query_result_resource(struct nvc0_context *nvc0,
    nouveau_pushbuf_space(push, 32, 2, 0);
    PUSH_REFN (push, hq->bo, NOUVEAU_BO_GART | NOUVEAU_BO_RD);
    PUSH_REFN (push, buf->bo, buf->domain | NOUVEAU_BO_WR);
-   BEGIN_1IC0(push, NVC0_3D(MACRO_QUERY_BUFFER_WRITE), 9);
-   switch (q->type) {
-   case PIPE_QUERY_OCCLUSION_PREDICATE:
-   case PIPE_QUERY_OCCLUSION_PREDICATE_CONSERVATIVE: /* XXX what if 64-bit? */
-   case PIPE_QUERY_SO_OVERFLOW_PREDICATE:
-   case PIPE_QUERY_SO_OVERFLOW_ANY_PREDICATE:
-      PUSH_DATA(push, 0x00000001);
-      break;
-   default:
-      if (result_type == PIPE_QUERY_TYPE_I32)
-         PUSH_DATA(push, 0x7fffffff);
-      else if (result_type == PIPE_QUERY_TYPE_U32)
-         PUSH_DATA(push, 0xffffffff);
-      else
-         PUSH_DATA(push, 0x00000000);
-      break;
+   BEGIN_1IC0(push, NVC0_3D(MACRO_QUERY_BUFFER_WRITE), 10);
+   PUSH_DATA(push, arg);
+
+   if (wait || hq->state == NVC0_HW_QUERY_STATE_READY) {
+      PUSH_DATA(push, 0);
+      PUSH_DATA(push, 0);
+   } else if (hq->is64bit) {
+      PUSH_DATA(push, hq->fence->sequence);
+      nouveau_pushbuf_data(push, nvc0->screen->fence.bo, 0,
+                           4 | NVC0_IB_ENTRY_1_NO_PREFETCH);
+   } else {
+      PUSH_DATA(push, hq->sequence);
+      nouveau_pushbuf_data(push, hq->bo, hq->offset,
+                           4 | NVC0_IB_ENTRY_1_NO_PREFETCH);
    }
 
    switch (q->type) {
@@ -460,6 +469,11 @@ nvc0_hw_get_query_result_resource(struct nvc0_context *nvc0,
       break;
    }
 
+   /* We need to compute the difference between 2 values, and then store the
+    * result as either a 32- or 64-bit value. As such let's treat all inputs
+    * as 64-bit (and just push an extra 0 for the 32-bit ones), and clamp
+    * the result to an limit if it's 32 bit or a predicate.
+    */
    if (hq->is64bit || qoffset) {
       nouveau_pushbuf_data(push, hq->bo, hq->offset + qoffset + 16 * index,
                            8 | NVC0_IB_ENTRY_1_NO_PREFETCH);
@@ -480,20 +494,17 @@ nvc0_hw_get_query_result_resource(struct nvc0_context *nvc0,
       PUSH_DATA(push, 0);
    }
 
-   if (wait || hq->state == NVC0_HW_QUERY_STATE_READY) {
-      PUSH_DATA(push, 0);
-      PUSH_DATA(push, 0);
-   } else if (hq->is64bit) {
-      PUSH_DATA(push, hq->fence->sequence);
-      nouveau_pushbuf_data(push, nvc0->screen->fence.bo, 0,
-                           4 | NVC0_IB_ENTRY_1_NO_PREFETCH);
-   } else {
-      PUSH_DATA(push, hq->sequence);
-      nouveau_pushbuf_data(push, hq->bo, hq->offset,
-                           4 | NVC0_IB_ENTRY_1_NO_PREFETCH);
-   }
-   PUSH_DATAh(push, buf->address + offset);
+   if (predicate)
+      PUSH_DATA(push, 0x00000001);
+   else if (result_type == PIPE_QUERY_TYPE_I32)
+      PUSH_DATA(push, 0x7fffffff);
+   else if (result_type == PIPE_QUERY_TYPE_U32)
+      PUSH_DATA(push, 0xffffffff);
+   else
+      PUSH_DATA(push, 0x00000000);
+
    PUSH_DATA (push, buf->address + offset);
+   PUSH_DATAh(push, buf->address + offset);
 
    util_range_add(&buf->valid_buffer_range, offset,
                   offset + (result_type >= PIPE_QUERY_TYPE_I64 ? 8 : 4));
