@@ -563,3 +563,48 @@ qbw_write:
 qbw_done:
    exit send (extrinsrt 0x0 $r7 0 16 16)
    maddrsend 0x44 /* SERIALIZE */
+
+/* NVC0_3D_MACRO_QUERY_BUFFER_WRITE_AVAIL:
+ *
+ * Like NVC0_3D_MACRO_QUERY_BUFFER_WRITE, this uses the query engine to write
+ * out values.
+ *
+ * arg = write64 ? 1 : 0
+ * parm[0] = desired sequence
+ * parm[1] = actual sequence
+ * parm[2] = LSB of destination address
+ * parm[3] = MSB of destination address
+ */
+.section #mme9097_query_buffer_write_avail
+   parm $r2
+   parm $r3
+   parm $r4
+   parm $r5
+   mov $r6 (sub $r3 $r2)
+   mov $r6 (sbb 0x0 0x0)
+   branz annul $r6 #qbwa_not_avail
+qbwa_avail:
+   mov $r6 0x1
+   bra annul #qbwa_write
+qbwa_not_avail:
+   mov $r6 0x0
+qbwa_write:
+   maddr 0x16c0 /* QUERY_ADDRESS_HIGH */
+   send $r5
+   send $r4
+   send $r6
+   braz $r1 #qbwa_done
+   mov $r7 0x1000
+   send (extrinsrt 0x0 $r7 0 16 16)
+qbwa_high:
+   /* XXX: things seem to mess up if $r6 is replaced with 0x4 in the add */
+   mov $r6 0x4
+   mov $r4 (add $r4 $r6)
+   mov $r5 (adc $r5 0x0)
+   maddr 0x16c0 /* QUERY_ADDRESS_HIGH */
+   send $r5
+   send $r4
+   send 0x0
+qbwa_done:
+   exit send (extrinsrt 0x0 $r7 0 16 16)
+   maddrsend 0x44 /* SERIALIZE */
