@@ -233,10 +233,11 @@ nvc0_rasterizer_state_create(struct pipe_context *pipe,
     SB_IMMED_3D(so, MULTISAMPLE_ENABLE, cso->multisample);
 
     SB_IMMED_3D(so, LINE_SMOOTH_ENABLE, cso->line_smooth);
-    if (cso->line_smooth || cso->multisample)
-       SB_BEGIN_3D(so, LINE_WIDTH_SMOOTH, 1);
-    else
-       SB_BEGIN_3D(so, LINE_WIDTH_ALIASED, 1);
+    /* On GM20x+, LINE_WIDTH_SMOOTH controls both aliased and smooth
+     * rendering, so set set both */
+    SB_BEGIN_3D(so, LINE_WIDTH_SMOOTH, 1);
+    SB_DATA    (so, fui(cso->line_width));
+    SB_BEGIN_3D(so, LINE_WIDTH_ALIASED, 1);
     SB_DATA    (so, fui(cso->line_width));
 
     SB_IMMED_3D(so, LINE_STIPPLE_ENABLE, cso->line_stipple_enable);
