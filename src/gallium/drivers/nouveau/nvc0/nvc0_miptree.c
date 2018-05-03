@@ -139,6 +139,7 @@ nvc0_mt_choose_storage_type(struct nv50_miptree *mt, bool compressed)
 static inline bool
 nvc0_miptree_init_ms_mode(struct nv50_miptree *mt)
 {
+   mt->multisampling = mt->base.base.nr_samples > 0;
    switch (mt->base.base.nr_samples) {
    case 8:
       mt->ms_mode = NVC0_3D_MULTISAMPLE_MODE_MS8;

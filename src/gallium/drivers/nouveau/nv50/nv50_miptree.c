@@ -209,6 +209,7 @@ const struct u_resource_vtbl nv50_miptree_vtbl =
 static inline bool
 nv50_miptree_init_ms_mode(struct nv50_miptree *mt)
 {
+   mt->multisampling = mt->base.base.nr_samples > 0;
    switch (mt->base.base.nr_samples) {
    case 8:
       mt->ms_mode = NV50_3D_MULTISAMPLE_MODE_MS8;
