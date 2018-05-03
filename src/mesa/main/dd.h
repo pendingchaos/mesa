@@ -788,6 +788,15 @@ struct dd_function_table {
                               const GLenum *attachments);
 
    /**
+    * \name Functions for GL_ARB_sample_locations
+    */
+   void (*GetProgrammableSampleCaps)(struct gl_context *ctx,
+                                     const struct gl_framebuffer *fb,
+                                     GLuint *bits, GLuint *width, GLuint *height);
+   void (*EvaluateDepthValues)(struct gl_context *ctx,
+                               const struct gl_framebuffer *fb);
+
+   /**
     * \name Query objects
     */
    /*@{*/
