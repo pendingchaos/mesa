@@ -68,6 +68,9 @@ objects. They all follow simple, one-method binding calls, e.g.
   that this takes effect even if multisampling is not explicitly enabled if
   the frambuffer surface(s) are multisampled.  Also, this mask is AND-ed
   with the optional fragment shader sample mask output (when emitted).
+* ``set_sample_locations`` sets the sample locations used for rasterization.
+  ```get_sample_position``` still returns the default locations. When NULL,
+  the default locations are used.
 * ``set_min_samples`` sets the minimum number of samples that must be run.
 * ``set_clip_state``
 * ``set_polygon_stipple``
