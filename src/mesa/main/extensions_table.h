@@ -103,6 +103,8 @@ EXT(ARB_provoking_vertex                    , EXT_provoking_vertex              
 EXT(ARB_query_buffer_object                 , ARB_query_buffer_object                , GLL, GLC,  x ,  x , 2013)
 EXT(ARB_robust_buffer_access_behavior       , ARB_robust_buffer_access_behavior      , GLL, GLC,  x ,  x , 2012)
 EXT(ARB_robustness                          , dummy_true                             , GLL, GLC,  x ,  x , 2010)
+EXT(ARB_sample_locations                    , ARB_sample_locations                   , GLL, GLC,  x ,  x, 2015)
+EXT(NV_sample_locations                     , ARB_sample_locations                   , GLL, GLC,  x , ES2, 2015)
 EXT(ARB_sample_shading                      , ARB_sample_shading                     , GLL, GLC,  x ,  x , 2009)
 EXT(ARB_sampler_objects                     , dummy_true                             , GLL, GLC,  x ,  x , 2009)
 EXT(ARB_seamless_cube_map                   , ARB_seamless_cube_map                  , GLL, GLC,  x ,  x , 2009)
