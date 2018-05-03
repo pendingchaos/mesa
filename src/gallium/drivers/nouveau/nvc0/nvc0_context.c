@@ -352,6 +352,10 @@ static void
 nvc0_context_get_sample_position(struct pipe_context *, unsigned, unsigned,
                                  float *);
 
+static void
+nvc0_context_get_sample_pixel_grid(struct pipe_context *, unsigned,
+                                   unsigned *, unsigned *);
+
 struct pipe_context *
 nvc0_create(struct pipe_screen *pscreen, void *priv, unsigned ctxflags)
 {
@@ -403,6 +407,7 @@ nvc0_create(struct pipe_screen *pscreen, void *priv, unsigned ctxflags)
    pipe->texture_barrier = nvc0_texture_barrier;
    pipe->memory_barrier = nvc0_memory_barrier;
    pipe->get_sample_position = nvc0_context_get_sample_position;
+   pipe->get_sample_pixel_grid = nvc0_context_get_sample_pixel_grid;
    pipe->emit_string_marker = nvc0_emit_string_marker;
 
    nouveau_context_init(&nvc0->base);
@@ -565,4 +570,34 @@ nvc0_context_get_sample_position(struct pipe_context *pipe,
 
    xy[0] = ptr[sample_index][0] * 0.0625f;
    xy[1] = ptr[sample_index][1] * 0.0625f;
+}
+
+static void
+nvc0_context_get_sample_pixel_grid(struct pipe_context *pipe,
+                                   unsigned sample_count,
+                                   unsigned *width, unsigned *height)
+{
+   switch (sample_count) {
+   case 0:
+   case 1:
+      /* this could be 4x4, but the GL state tracker makes it difficult to
+       * create a 1x MSAA texture and smaller grids save CB space */
+      *width = 2;
+      *height = 4;
+      break;
+   case 2:
+      *width = 2;
+      *height = 4;
+      break;
+   case 4:
+      *width = 2;
+      *height = 2;
+      break;
+   case 8:
+      *width = 1;
+      *height = 2;
+      break;
+   default:
+      assert(0);
+   }
 }

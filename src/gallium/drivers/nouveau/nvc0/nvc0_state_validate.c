@@ -71,6 +71,126 @@ nvc0_fb_set_null_rt(struct nouveau_pushbuf *push, unsigned i, unsigned layers)
    PUSH_DATA (push, 0);      // base layer
 }
 
+static uint32_t
+nv120_encode_cb_sample_location(uint8_t x, uint8_t y)
+{
+   static const uint8_t lut[] = {
+      0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf,
+      0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7};
+   uint32_t result = 0;
+   /* S0.12 representation for TGSI_OPCODE_INTERP_SAMPLE */
+   result |= lut[x]<<8 | lut[y]<<24;
+   /* fill in gaps with data in a representation for SV_SAMPLE_POS */
+   result |= x<<12 | y<<28;
+   return result;
+}
+
+static void
+nv120_validate_sample_locations(struct nvc0_context *nvc0,
+                                unsigned ms, bool multisampling)
+{
+   struct nouveau_pushbuf *push = nvc0->base.pushbuf;
+   struct nvc0_screen *screen = nvc0->screen;
+   unsigned grid_width, grid_height, hw_grid_width;
+   uint8_t sample_locations[16][2];
+   unsigned cb[64];
+   unsigned i, pixel, pixel_y, pixel_x, sample;
+
+   nvc0->base.pipe.get_sample_pixel_grid(&nvc0->base.pipe, ms,
+                                         &grid_width, &grid_height);
+
+   hw_grid_width = grid_width;
+   if (ms == 1) /* get_sample_pixel_grid() exposes 2x4 for 1x msaa */
+      hw_grid_width = 4;
+
+   if (!multisampling) {
+      memset(sample_locations, 8, sizeof(sample_locations));
+   } else if (nvc0->sample_locations.enabled) {
+      struct pipe_sample_locations_state locs_state = nvc0->sample_locations;
+      util_sample_locations_flip_y(&nvc0->base.pipe, &locs_state, &nvc0->framebuffer);
+
+      for (pixel = 0; pixel < hw_grid_width*grid_height; pixel++) {
+         for (sample = 0; sample < ms; sample++) {
+            unsigned pixel_x = pixel % hw_grid_width;
+            unsigned pixel_y = pixel / hw_grid_width;
+            unsigned wi = pixel * ms + sample;
+            unsigned ri = (pixel_y * grid_width + pixel_x % grid_width);
+            ri = ri * ms + sample;
+            sample_locations[wi][0] = locs_state.locations[ri] & 0xf;
+            sample_locations[wi][1] = 16 - (locs_state.locations[ri] >> 4);
+         }
+      }
+   } else {
+      const uint8_t (*ptr)[2] = nvc0_get_sample_locations(ms);
+      for (i = 0; i < 16; i++) {
+         sample_locations[i][0] = ptr[i%ms][0];
+         sample_locations[i][1] = ptr[i%ms][1];
+      }
+   }
+
+   BEGIN_NVC0(push, NVC0_3D(CB_SIZE), 3);
+   PUSH_DATA (push, NVC0_CB_AUX_SIZE);
+   PUSH_DATAh(push, screen->uniform_bo->offset + NVC0_CB_AUX_INFO(4));
+   PUSH_DATA (push, screen->uniform_bo->offset + NVC0_CB_AUX_INFO(4));
+   BEGIN_1IC0(push, NVC0_3D(CB_POS), 65);
+   PUSH_DATA (push, NVC0_CB_AUX_SAMPLE_INFO);
+   for (pixel_y = 0; pixel_y < 4; pixel_y++) {
+      for (pixel_x = 0; pixel_x < 2; pixel_x++) {
+         for (sample = 0; sample < ms; sample++) {
+            unsigned write_index = (pixel_y * 2 + pixel_x) * 8 + sample;
+            unsigned read_index = (pixel_y % grid_height * hw_grid_width + pixel_x % grid_width) * ms + sample;
+            uint8_t x = sample_locations[read_index][0];
+            uint8_t y = sample_locations[read_index][1];
+            cb[write_index] = nv120_encode_cb_sample_location(x, y);
+         }
+      }
+   }
+   PUSH_DATAp(push, cb, 64);
+
+   if (screen->base.class_3d >= GM200_3D_CLASS) {
+      uint32_t val[4] = {};
+
+      for (i = 0; i < 16; i++) {
+         val[i / 4] |= sample_locations[i][0] << ((i % 4) * 8);
+         val[i / 4] |= sample_locations[i][1] << ((i % 4) * 8 + 4);
+      }
+
+      BEGIN_NVC0(push, SUBC_3D(0x11e0), 4);
+      PUSH_DATAp(push, val, 4);
+   }
+}
+
+static void
+nvc0_validate_sample_locations(struct nvc0_context *nvc0, unsigned ms)
+{
+   struct nouveau_pushbuf *push = nvc0->base.pushbuf;
+   struct nvc0_screen *screen = nvc0->screen;
+   unsigned i;
+
+   BEGIN_NVC0(push, NVC0_3D(CB_SIZE), 3);
+   PUSH_DATA (push, NVC0_CB_AUX_SIZE);
+   PUSH_DATAh(push, screen->uniform_bo->offset + NVC0_CB_AUX_INFO(4));
+   PUSH_DATA (push, screen->uniform_bo->offset + NVC0_CB_AUX_INFO(4));
+   BEGIN_1IC0(push, NVC0_3D(CB_POS), 1 + 2 * ms);
+   PUSH_DATA (push, NVC0_CB_AUX_SAMPLE_INFO);
+   for (i = 0; i < ms; i++) {
+      float xy[2];
+      nvc0->base.pipe.get_sample_position(&nvc0->base.pipe, ms, i, xy);
+      PUSH_DATAf(push, xy[0]);
+      PUSH_DATAf(push, xy[1]);
+   }
+
+   if (screen->base.class_3d >= GM200_3D_CLASS) {
+      const uint8_t (*ptr)[2] = nvc0_get_sample_locations(ms);
+      uint32_t val[4] = {};
+
+      for (i = 0; i < 16; i++) {
+         val[i / 4] |= ptr[i % ms][0] << (((i % 4) * 8) + 0);
+         val[i / 4] |= ptr[i % ms][1] << (((i % 4) * 8) + 4);
+      }
+   }
+}
+
 static void
 nvc0_validate_fb(struct nvc0_context *nvc0)
 {
@@ -81,6 +201,7 @@ nvc0_validate_fb(struct nvc0_context *nvc0)
    unsigned ms_mode = NVC0_3D_MULTISAMPLE_MODE_MS1;
    unsigned nr_cbufs = fb->nr_cbufs;
    bool serialize = false;
+   bool multisampling = false;
 
    nouveau_bufctx_reset(nvc0->bufctx_3d, NVC0_BIND_3D_FB);
 
@@ -120,6 +241,7 @@ nvc0_validate_fb(struct nvc0_context *nvc0)
          PUSH_DATA(push, sf->base.u.tex.first_layer);
 
          ms_mode = mt->ms_mode;
+         multisampling = mt->multisampling;
       } else {
          if (res->base.target == PIPE_BUFFER) {
             PUSH_DATA(push, 262144);
@@ -170,6 +292,7 @@ nvc0_validate_fb(struct nvc0_context *nvc0)
       PUSH_DATA (push, sf->base.u.tex.first_layer);
 
       ms_mode = mt->ms_mode;
+      multisampling = mt->multisampling;
 
       if (mt->base.status & NOUVEAU_BUFFER_STATUS_GPU_READING)
          serialize = true;
@@ -188,8 +311,10 @@ nvc0_validate_fb(struct nvc0_context *nvc0)
 
       nvc0_fb_set_null_rt(push, 0, fb->layers);
 
-      if (fb->samples > 1)
+      if (fb->samples > 1) {
          ms_mode = ffs(fb->samples) - 1;
+         multisampling = true;
+      }
       nr_cbufs = 1;
    }
 
@@ -198,31 +323,11 @@ nvc0_validate_fb(struct nvc0_context *nvc0)
    IMMED_NVC0(push, NVC0_3D(MULTISAMPLE_MODE), ms_mode);
 
    ms = 1 << ms_mode;
-   BEGIN_NVC0(push, NVC0_3D(CB_SIZE), 3);
-   PUSH_DATA (push, NVC0_CB_AUX_SIZE);
-   PUSH_DATAh(push, screen->uniform_bo->offset + NVC0_CB_AUX_INFO(4));
-   PUSH_DATA (push, screen->uniform_bo->offset + NVC0_CB_AUX_INFO(4));
-   BEGIN_1IC0(push, NVC0_3D(CB_POS), 1 + 2 * ms);
-   PUSH_DATA (push, NVC0_CB_AUX_SAMPLE_INFO);
-   for (i = 0; i < ms; i++) {
-      float xy[2];
-      nvc0->base.pipe.get_sample_position(&nvc0->base.pipe, ms, i, xy);
-      PUSH_DATAf(push, xy[0]);
-      PUSH_DATAf(push, xy[1]);
-   }
 
-   if (screen->base.class_3d >= GM200_3D_CLASS) {
-      const uint8_t (*ptr)[2] = nvc0_get_sample_locations(ms);
-      uint32_t val[4] = {};
-
-      for (i = 0; i < 16; i++) {
-         val[i / 4] |= ptr[i % ms][0] << (((i % 4) * 8) + 0);
-         val[i / 4] |= ptr[i % ms][1] << (((i % 4) * 8) + 4);
-      }
-
-      BEGIN_NVC0(push, SUBC_3D(0x11e0), 4);
-      PUSH_DATAp(push, val, 4);
-   }
+   if (screen->base.class_3d>=GM200_3D_CLASS)
+      nv120_validate_sample_locations(nvc0, ms, multisampling);
+   else
+      nvc0_validate_sample_locations(nvc0, ms);
 
    if (serialize)
       IMMED_NVC0(push, NVC0_3D(SERIALIZE), 0);

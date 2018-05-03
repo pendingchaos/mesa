@@ -264,6 +264,8 @@ nvc0_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_TGSI_VS_LAYER_VIEWPORT:
    case PIPE_CAP_TGSI_TES_LAYER_VIEWPORT:
    case PIPE_CAP_POST_DEPTH_COVERAGE:
+   case PIPE_CAP_PROGRAMMABLE_SAMPLE_LOCATIONS:
+      return class_3d >= GM200_3D_CLASS;
    case PIPE_CAP_SEAMLESS_CUBE_MAP_PER_TEXTURE:
    case PIPE_CAP_TGSI_BALLOT:
    case PIPE_CAP_BINDLESS_TEXTURE:
@@ -308,7 +310,6 @@ nvc0_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_FENCE_SIGNAL:
    case PIPE_CAP_CONSTBUF0_FLAGS:
    case PIPE_CAP_PACKED_UNIFORMS:
-   case PIPE_CAP_PROGRAMMABLE_SAMPLE_LOCATIONS:
       return 0;
 
    case PIPE_CAP_VENDOR_ID:
