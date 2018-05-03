@@ -52,6 +52,7 @@ struct pipe_draw_info;
 struct pipe_grid_info;
 struct pipe_fence_handle;
 struct pipe_framebuffer_state;
+struct pipe_sample_locations_state;
 struct pipe_image_view;
 struct pipe_query;
 struct pipe_poly_stipple;
@@ -278,6 +279,9 @@ struct pipe_context {
 
    void (*set_framebuffer_state)( struct pipe_context *,
                                   const struct pipe_framebuffer_state * );
+
+   void (*set_sample_locations_state)( struct pipe_context *,
+                                       const struct pipe_sample_locations_state * );
 
    void (*set_polygon_stipple)( struct pipe_context *,
 				const struct pipe_poly_stipple * );
@@ -720,7 +724,7 @@ struct pipe_context {
    /*@}*/
 
    /**
-    * Get sample position for an individual sample point.
+    * Get the default sample position for an individual sample point.
     *
     * \param sample_count - total number of samples
     * \param sample_index - sample to get the position values for
@@ -731,6 +735,17 @@ struct pipe_context {
                                unsigned sample_count,
                                unsigned sample_index,
                                float *out_value);
+
+   /**
+    * Get the sample pixel grid's size.
+    *
+    * \param sample_count - total number of samples
+    * \param out_width - the width of the pixel grid
+    * \param out_height - the height of the pixel grid
+    */
+   void (*get_sample_pixel_grid)(struct pipe_context *context,
+                                 unsigned sample_count,
+                                 unsigned *out_width, unsigned *out_height);
 
    /**
     * Query a timestamp in nanoseconds.  This is completely equivalent to

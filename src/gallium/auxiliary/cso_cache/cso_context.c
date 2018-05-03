@@ -121,6 +121,7 @@ struct cso_context {
    boolean render_condition_cond, render_condition_cond_saved;
 
    struct pipe_framebuffer_state fb, fb_saved;
+   struct pipe_sample_locations_state sample_locations, sample_locations_saved;
    struct pipe_viewport_state vp, vp_saved;
    struct pipe_blend_color blend_color;
    unsigned sample_mask, sample_mask_saved;
@@ -742,6 +743,32 @@ cso_restore_framebuffer(struct cso_context *ctx)
       ctx->pipe->set_framebuffer_state(ctx->pipe, &ctx->fb);
       util_unreference_framebuffer_state(&ctx->fb_saved);
    }
+}
+
+
+void cso_set_sample_locations(struct cso_context *ctx,
+                              const struct pipe_sample_locations_state *locs)
+{
+   size_t size = sizeof(ctx->sample_locations);
+   if (memcmp(&ctx->sample_locations, locs, size)) {
+      memcpy(&ctx->sample_locations, locs, size);
+      ctx->pipe->set_sample_locations_state(ctx->pipe, locs);
+   }
+}
+
+static void
+cso_save_sample_locations(struct cso_context *ctx)
+{
+   size_t size = sizeof(ctx->sample_locations);
+   memcpy(&ctx->sample_locations_saved, &ctx->sample_locations, size);
+}
+
+static void
+cso_restore_sample_locations(struct cso_context *ctx)
+{
+   size_t size = sizeof(ctx->sample_locations);
+   if (memcmp(&ctx->sample_locations, &ctx->sample_locations_saved, size))
+      cso_set_sample_locations(ctx, &ctx->sample_locations_saved);
 }
 
 
@@ -1636,6 +1663,8 @@ cso_save_state(struct cso_context *cso, unsigned state_mask)
       cso->pipe->set_active_query_state(cso->pipe, false);
    if (state_mask & CSO_BIT_FRAGMENT_IMAGE0)
       cso_save_fragment_image0(cso);
+   if (state_mask & CSO_BIT_SAMPLE_LOCATIONS)
+      cso_save_sample_locations(cso);
 }
 
 
@@ -1691,6 +1720,8 @@ cso_restore_state(struct cso_context *cso)
       cso->pipe->set_active_query_state(cso->pipe, true);
    if (state_mask & CSO_BIT_FRAGMENT_IMAGE0)
       cso_restore_fragment_image0(cso);
+   if (state_mask & CSO_BIT_SAMPLE_LOCATIONS)
+      cso_restore_sample_locations(cso);
 
    cso->saved_state = 0;
 }

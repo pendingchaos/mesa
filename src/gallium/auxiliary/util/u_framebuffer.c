@@ -240,3 +240,35 @@ util_framebuffer_get_num_samples(const struct pipe_framebuffer_state *fb)
 
    return 1;
 }
+
+
+/**
+ * Flip the sample location state along the Y axis.
+ */
+void
+util_sample_locations_flip_y(struct pipe_context *ctx,
+                             struct pipe_sample_locations_state *locs,
+                             const struct pipe_framebuffer_state *fb)
+{
+   unsigned grid_width, grid_height, shift, row, i;
+   uint8_t new_locations[
+      PIPE_MAX_SAMPLE_LOCATION_GRID_SIZE*PIPE_MAX_SAMPLE_LOCATION_GRID_SIZE*32];
+   STATIC_ASSERT(sizeof(new_locations) == sizeof(locs->locations));
+
+   memset(new_locations, 0x88, sizeof(new_locations));
+
+   ctx->get_sample_pixel_grid(ctx, fb->samples, &grid_width, &grid_height);
+   shift = fb->height % grid_height;
+
+   for (row = 0; row < grid_height; row++) {
+      unsigned row_size = grid_width * fb->samples;
+      for (i = 0; i < row_size; i++) {
+         unsigned dest_row = grid_height - row - 1;
+         /* this relies on unsigned integer wraparound behaviour */
+         dest_row = (dest_row - shift) % grid_height;
+         new_locations[dest_row * row_size + i] = locs->locations[row * row_size + i];
+      }
+   }
+
+   memcpy(locs->locations, new_locations, sizeof(new_locations));
+}

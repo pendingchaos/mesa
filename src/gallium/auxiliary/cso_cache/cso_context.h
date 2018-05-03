@@ -133,6 +133,10 @@ void cso_set_framebuffer(struct cso_context *cso,
                          const struct pipe_framebuffer_state *fb);
 
 
+void cso_set_sample_locations(struct cso_context *ctx,
+                              const struct pipe_sample_locations_state *locs);
+
+
 void cso_set_viewport(struct cso_context *cso,
                       const struct pipe_viewport_state *vp);
 void cso_set_viewport_dims(struct cso_context *ctx,
@@ -176,6 +180,7 @@ void cso_set_render_condition(struct cso_context *cso,
 #define CSO_BIT_VIEWPORT              0x40000
 #define CSO_BIT_PAUSE_QUERIES         0x80000
 #define CSO_BIT_FRAGMENT_IMAGE0      0x100000
+#define CSO_BIT_SAMPLE_LOCATIONS     0x200000
 
 #define CSO_BITS_ALL_SHADERS (CSO_BIT_VERTEX_SHADER | \
                               CSO_BIT_FRAGMENT_SHADER | \

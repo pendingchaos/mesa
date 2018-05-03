@@ -64,6 +64,12 @@ extern unsigned
 util_framebuffer_get_num_samples(const struct pipe_framebuffer_state *fb);
 
 
+extern void
+util_sample_locations_flip_y(struct pipe_context *ctx,
+                             struct pipe_sample_locations_state *locs,
+                             const struct pipe_framebuffer_state *fb);
+
+
 #ifdef __cplusplus
 }
 #endif

@@ -74,6 +74,7 @@ extern "C" {
 #define PIPE_MAX_CLIP_OR_CULL_DISTANCE_COUNT 8
 #define PIPE_MAX_CLIP_OR_CULL_DISTANCE_ELEMENT_COUNT 2
 #define PIPE_MAX_WINDOW_RECTANGLES 8
+#define PIPE_MAX_SAMPLE_LOCATION_GRID_SIZE 4
 
 #define PIPE_MAX_HW_ATOMIC_BUFFERS 32
 
@@ -378,6 +379,31 @@ struct pipe_framebuffer_state
    struct pipe_surface *cbufs[PIPE_MAX_COLOR_BUFS];
 
    struct pipe_surface *zsbuf;      /**< Z/stencil buffer */
+};
+
+
+/**
+ * The samples are accessed with
+ * locations[(pixel_y*grid_x+pixel_x)*ms+i],
+ * where:
+ * ms      = the sample count
+ * grid_x  = the pixel grid width for the sample count
+ * grid_y  = the pixel grid height for the sample count
+ * pixel_x = the window x coordinate modulo grid_x
+ * pixel_y = the window y coordinate modulo grid_y
+ * i       = the sample index
+ * This gives a result with the x coordinate as the low 4 bits and the y
+ * coordinate as the high 4 bits. For each coordinate 0 is the left or top edge of
+ * the pixel's rectangle and 16 (not 15) is the right or bottom edge.
+ *
+ * The pixel grid is used to vary sample locations across pixels and it's size
+ * can be queried with get_sample_pixel_grid().
+ */
+struct pipe_sample_locations_state
+{
+   bool enabled;
+   uint8_t locations[
+      PIPE_MAX_SAMPLE_LOCATION_GRID_SIZE*PIPE_MAX_SAMPLE_LOCATION_GRID_SIZE*32];
 };
 
 
