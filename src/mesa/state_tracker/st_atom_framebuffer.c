@@ -103,6 +103,68 @@ framebuffer_quantize_num_samples(struct st_context *st, unsigned num_samples)
 }
 
 /**
+ * Update the pipe_context's sample location state
+ */
+static void
+update_sample_locations(struct st_context *st,
+                        const struct pipe_framebuffer_state *fb_state)
+{
+   struct pipe_sample_locations_state locations;
+   struct gl_framebuffer *fb = st->ctx->DrawBuffer;
+
+   if (!st->ctx->Extensions.ARB_sample_locations)
+      return;
+
+   locations.enabled = fb->ProgrammableSampleLocations;
+   if (locations.enabled) {
+      unsigned grid_width, grid_height;
+      int samples = _mesa_geometric_samples(fb);
+      int pixel, sample_index;
+      bool sample_location_pixel_grid = fb->SampleLocationPixelGrid;
+
+      st->pipe->get_sample_pixel_grid(st->pipe, samples, &grid_width, &grid_height);
+
+      /**
+       * when a dimension is greater than MAX_SAMPLE_LOCATION_GRID_SIZE,
+       * st->ctx->Driver.GetSamplePixelGrid() returns 1 for both dimensions.
+       */
+      if (grid_width>MAX_SAMPLE_LOCATION_GRID_SIZE ||
+          grid_height>MAX_SAMPLE_LOCATION_GRID_SIZE)
+         sample_location_pixel_grid = false;
+
+      for (pixel = 0; pixel < grid_width * grid_height; pixel++) {
+         for (sample_index = 0; sample_index < samples; sample_index++) {
+            int table_index = sample_index;
+            float x = 0.5f, y = 0.5f;
+            uint8_t loc;
+            if (sample_location_pixel_grid)
+               table_index = pixel * samples + sample_index;
+            if (fb->SampleLocationTable) {
+               x = fb->SampleLocationTable[table_index*2];
+               y = fb->SampleLocationTable[table_index*2+1];
+            }
+            if (st->state.fb_orientation == Y_0_BOTTOM)
+               y = 1.0 - y;
+
+            loc = roundf(CLAMP(x*16.0f, 0.0f, 15.0f));
+            loc |= (int)roundf(CLAMP(y*16.0f, 0.0f, 15.0f)) << 4;
+            locations.locations[pixel*samples+sample_index] = loc;
+         }
+      }
+
+      util_sample_locations_flip_y(st->pipe, &locations, fb_state);
+   } else {
+      /**
+       * util_sample_locations_flip_y() initializes unused data to 0x88, so
+       * this memset is not useful when locations.enabled is true.
+       */
+      memset(locations.locations, 0x88, sizeof(locations.locations));
+   }
+
+   cso_set_sample_locations(st->cso_context, &locations);
+}
+
+/**
  * Update framebuffer state (color, depth, stencil, etc. buffers)
  */
 void
@@ -209,4 +271,6 @@ st_update_framebuffer_state( struct st_context *st )
    st->state.fb_num_samples = util_framebuffer_get_num_samples(&framebuffer);
    st->state.fb_num_layers = util_framebuffer_get_num_layers(&framebuffer);
    st->state.fb_num_cb = framebuffer.nr_cbufs;
+
+   update_sample_locations(st, &framebuffer);
 }
