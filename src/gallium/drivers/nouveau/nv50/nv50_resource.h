@@ -54,6 +54,7 @@ struct nv50_miptree {
    uint8_t ms_x;      /* log2 of number of samples in x/y dimension */
    uint8_t ms_y;
    uint8_t ms_mode;
+   bool multisampling; /* true if nr_samples > 0 on creation */
 };
 
 static inline struct nv50_miptree *
