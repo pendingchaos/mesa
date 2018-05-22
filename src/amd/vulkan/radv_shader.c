@@ -670,7 +670,8 @@ shader_variant_create(struct radv_device *device,
 					&variant->info, shaders, shader_count,
 					options);
 		if (!module->nir)
-			aco_compile_shader(shaders[0], &variant->config, &binary);
+			aco_compile_shader(shaders[0], &variant->config,
+			                   &binary, &variant->info);
 	}
 
 	radv_destroy_llvm_compiler(&ac_llvm, thread_compiler);
