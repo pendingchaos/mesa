@@ -2870,6 +2870,8 @@ void nir_to_lcssa(nir_shader *shader);
  */
 bool nir_convert_from_ssa(nir_shader *shader, bool phi_webs_only);
 
+bool* nir_divergence_analysis(nir_shader *shader);
+
 bool nir_lower_phis_to_regs_block(nir_block *block);
 bool nir_lower_ssa_defs_to_regs_block(nir_block *block);
 
@@ -2916,8 +2918,6 @@ bool nir_opt_undef(nir_shader *shader);
 bool nir_opt_conditional_discard(nir_shader *shader);
 
 void nir_sweep(nir_shader *shader);
-
-bool* nir_uniform_analysis(nir_shader *shader);
 
 nir_intrinsic_op nir_intrinsic_from_system_value(gl_system_value val);
 gl_system_value nir_system_value_from_intrinsic(nir_intrinsic_op intrin);
