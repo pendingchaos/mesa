@@ -652,7 +652,7 @@ shader_variant_create(struct radv_device *device,
 					options);
 		if (!module->nir)
 			aco_compile_shader(shaders[0], &variant->config,
-			                   &binary, &variant->info);
+			                   &binary, &variant->info, options);
 	}
 
 	LLVMDisposeTargetMachine(tm);
