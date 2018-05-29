@@ -93,6 +93,7 @@ struct nv50_ir_prog_info
       uint32_t codeSize;
       uint32_t instructions;
       uint8_t sourceRep;  /* PIPE_SHADER_IR_* */
+      uint32_t sourceHash; /* CRC-32 */
       const void *source;
       void *relocData;
       void *fixupData;

@@ -27,6 +27,7 @@
 #include "nvc0/nvc0_context.h"
 
 #include "codegen/nv50_ir_driver.h"
+#include "codegen/nv50_ir_dump.h"
 #include "nvc0/nve4_compute.h"
 
 /* NOTE: Using a[0x270] in FP may cause an error even if we're using less than
@@ -506,6 +507,64 @@ nvc0_fp_gen_header(struct nvc0_program *fp, struct nv50_ir_prog_info *info)
    return 0;
 }
 
+static int
+nvc0_program_create_header(struct nvc0_program *prog,
+                           struct nv50_ir_prog_info *info)
+{
+   int ret = 0;
+   switch (prog->type) {
+   case PIPE_SHADER_VERTEX:
+      ret = nvc0_vp_gen_header(prog, info);
+      break;
+   case PIPE_SHADER_TESS_CTRL:
+      ret = nvc0_tcp_gen_header(prog, info);
+      break;
+   case PIPE_SHADER_TESS_EVAL:
+      ret = nvc0_tep_gen_header(prog, info);
+      break;
+   case PIPE_SHADER_GEOMETRY:
+      ret = nvc0_gp_gen_header(prog, info);
+      break;
+   case PIPE_SHADER_FRAGMENT:
+      ret = nvc0_fp_gen_header(prog, info);
+      break;
+   case PIPE_SHADER_COMPUTE:
+      prog->cp.syms = info->bin.syms;
+      prog->cp.num_syms = info->bin.numSyms;
+      break;
+   default:
+      ret = -1;
+      NOUVEAU_ERR("unknown program type: %u\n", prog->type);
+      break;
+   }
+   if (ret)
+      return ret;
+
+   if (info->bin.tlsSpace) {
+      assert(info->bin.tlsSpace < (1 << 24));
+      prog->hdr[0] |= 1 << 26;
+      prog->hdr[1] |= align(info->bin.tlsSpace, 0x10); /* l[] size */
+      prog->need_tls = true;
+   }
+   /* TODO: factor 2 only needed where joinat/precont is used,
+    *       and we only have to count non-uniform branches
+    */
+   /*
+   if ((info->maxCFDepth * 2) > 16) {
+      prog->hdr[2] |= (((info->maxCFDepth * 2) + 47) / 48) * 0x200;
+      prog->need_tls = true;
+   }
+   */
+   if (info->io.globalAccess)
+      prog->hdr[0] |= 1 << 26;
+   if (info->io.globalAccess & 0x2)
+      prog->hdr[0] |= 1 << 16;
+   if (info->io.fp64)
+      prog->hdr[0] |= 1 << 27;
+
+   return 0;
+}
+
 static struct nvc0_transform_feedback_state *
 nvc0_program_create_tfb_state(const struct nv50_ir_prog_info *info,
                               const struct pipe_stream_output_info *pso)
@@ -565,6 +624,30 @@ nvc0_program_dump(struct nvc0_program *prog)
 }
 #endif
 
+static void
+nvc0_dump_header(struct nvc0_program *prog, struct nv50_ir_prog_info *info)
+{
+   FILE *fp = nv50_ir_begin_dump(info, "header", ".hdr", true);
+   if (fp) {
+      fwrite(prog->hdr, sizeof(prog->hdr), 1, fp);
+      fclose(fp);
+   }
+}
+
+static bool
+nvc0_replace_header(struct nvc0_program *prog, struct nv50_ir_prog_info *info)
+{
+   size_t size;
+   void *data;
+   if (!nv50_ir_get_replacement(info, "header", ".hdr", &size, &data))
+      return false;
+
+   memcpy(prog->hdr, data, MIN2(size, 20));
+   FREE(data);
+
+   return true;
+}
+
 bool
 nvc0_program_translate(struct nvc0_program *prog, uint16_t chipset,
                        struct pipe_debug_callback *debug)
@@ -618,6 +701,8 @@ nvc0_program_translate(struct nvc0_program *prog, uint16_t chipset,
 
    info->assignSlots = nvc0_program_assign_varying_slots;
 
+   nv50_ir_create_source_hash(info);
+
    ret = nv50_ir_generate_code(info);
    if (ret) {
       NOUVEAU_ERR("shader translation failed: %i\n", ret);
@@ -641,55 +726,12 @@ nvc0_program_translate(struct nvc0_program *prog, uint16_t chipset,
       info->out[info->io.edgeFlagOut].mask = 0; /* for headergen */
    prog->vp.edgeflag = info->io.edgeFlagIn;
 
-   switch (prog->type) {
-   case PIPE_SHADER_VERTEX:
-      ret = nvc0_vp_gen_header(prog, info);
-      break;
-   case PIPE_SHADER_TESS_CTRL:
-      ret = nvc0_tcp_gen_header(prog, info);
-      break;
-   case PIPE_SHADER_TESS_EVAL:
-      ret = nvc0_tep_gen_header(prog, info);
-      break;
-   case PIPE_SHADER_GEOMETRY:
-      ret = nvc0_gp_gen_header(prog, info);
-      break;
-   case PIPE_SHADER_FRAGMENT:
-      ret = nvc0_fp_gen_header(prog, info);
-      break;
-   case PIPE_SHADER_COMPUTE:
-      prog->cp.syms = info->bin.syms;
-      prog->cp.num_syms = info->bin.numSyms;
-      break;
-   default:
-      ret = -1;
-      NOUVEAU_ERR("unknown program type: %u\n", prog->type);
-      break;
+   if (!nvc0_replace_header(prog, info)) {
+      ret = nvc0_program_create_header(prog, info);
+      if (ret)
+         goto out;
+      nvc0_dump_header(prog, info);
    }
-   if (ret)
-      goto out;
-
-   if (info->bin.tlsSpace) {
-      assert(info->bin.tlsSpace < (1 << 24));
-      prog->hdr[0] |= 1 << 26;
-      prog->hdr[1] |= align(info->bin.tlsSpace, 0x10); /* l[] size */
-      prog->need_tls = true;
-   }
-   /* TODO: factor 2 only needed where joinat/precont is used,
-    *       and we only have to count non-uniform branches
-    */
-   /*
-   if ((info->maxCFDepth * 2) > 16) {
-      prog->hdr[2] |= (((info->maxCFDepth * 2) + 47) / 48) * 0x200;
-      prog->need_tls = true;
-   }
-   */
-   if (info->io.globalAccess)
-      prog->hdr[0] |= 1 << 26;
-   if (info->io.globalAccess & 0x2)
-      prog->hdr[0] |= 1 << 16;
-   if (info->io.fp64)
-      prog->hdr[0] |= 1 << 27;
 
    if (prog->pipe.stream_output.num_outputs)
       prog->tfb = nvc0_program_create_tfb_state(info,

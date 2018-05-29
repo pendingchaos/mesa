@@ -23,6 +23,7 @@
 #include "codegen/nv50_ir.h"
 #include "codegen/nv50_ir_target.h"
 #include "codegen/nv50_ir_driver.h"
+#include "codegen/nv50_ir_dump.h"
 
 extern "C" {
 #include "nouveau_debug.h"
@@ -1244,30 +1245,35 @@ nv50_ir_generate_code(struct nv50_ir_prog_info *info)
       prog->print();
 
    targ->parseDriverInfo(info);
-   prog->getTarget()->runLegalizePass(prog, nv50_ir::CG_STAGE_PRE_SSA);
 
-   prog->convertToSSA();
+   if (!nv50_ir::replaceProgramCode(prog)) {
+      prog->getTarget()->runLegalizePass(prog, nv50_ir::CG_STAGE_PRE_SSA);
 
-   if (prog->dbgFlags & NV50_IR_DEBUG_VERBOSE)
-      prog->print();
+      prog->convertToSSA();
 
-   prog->optimizeSSA(info->optLevel);
-   prog->getTarget()->runLegalizePass(prog, nv50_ir::CG_STAGE_SSA);
+      if (prog->dbgFlags & NV50_IR_DEBUG_VERBOSE)
+         prog->print();
 
-   if (prog->dbgFlags & NV50_IR_DEBUG_BASIC)
-      prog->print();
+      prog->optimizeSSA(info->optLevel);
+      prog->getTarget()->runLegalizePass(prog, nv50_ir::CG_STAGE_SSA);
 
-   if (!prog->registerAllocation()) {
-      ret = -4;
-      goto out;
-   }
-   prog->getTarget()->runLegalizePass(prog, nv50_ir::CG_STAGE_POST_RA);
+      if (prog->dbgFlags & NV50_IR_DEBUG_BASIC)
+         prog->print();
 
-   prog->optimizePostRA(info->optLevel);
+      if (!prog->registerAllocation()) {
+         ret = -4;
+         goto out;
+      }
+      prog->getTarget()->runLegalizePass(prog, nv50_ir::CG_STAGE_POST_RA);
 
-   if (!prog->emitBinary(info)) {
-      ret = -5;
-      goto out;
+      prog->optimizePostRA(info->optLevel);
+
+      if (!prog->emitBinary(info)) {
+         ret = -5;
+         goto out;
+      }
+
+      nv50_ir::dumpProgramCodeAndIR(prog);
    }
 
 out:
