@@ -86,6 +86,7 @@ const char *operationStr[OP_LAST + 1] =
    "fma",
    "sad",
    "shladd",
+   "xmad",
    "abs",
    "neg",
    "not",
@@ -239,6 +240,11 @@ static const char *barOpStr[] =
 {
    "sync", "arrive", "red and", "red or", "red popc"
 };
+ 
+static const char *xmadOpCModeStr[] =
+{
+   "clo", "chi", "csfu", "cbcc"
+};
 
 static const char *DataTypeStr[] =
 {
@@ -387,6 +393,10 @@ int Modifier::print(char *buf, size_t size) const
       SPACE_PRINT(pos > base && pos < size, "neg");
    if (bits & NV50_IR_MOD_ABS)
       SPACE_PRINT(pos > base && pos < size, "abs");
+   if (bits & NV50_IR_MOD_H1)
+      SPACE_PRINT(pos > base && pos < size, "h1");
+   if (bits & NV50_IR_MOD_SEXT)
+      SPACE_PRINT(pos > base && pos < size, "sext");
 
    return pos;
 }
@@ -624,6 +634,16 @@ void Instruction::print() const
          if (subOp < ARRAY_SIZE(barOpStr))
             PRINT("%s ", barOpStr[subOp]);
          break;
+      case OP_XMAD: {
+         if (subOp & NV50_IR_SUBOP_XMAD_PSL)
+            PRINT("psl ");
+         if (subOp & NV50_IR_SUBOP_XMAD_MRG)
+            PRINT("mrg ");
+         unsigned cmode = (subOp >> 2) & 0x7;
+         if (cmode && cmode <= ARRAY_SIZE(xmadOpCModeStr))
+            PRINT("%s ", xmadOpCModeStr[cmode - 1]);
+         break;
+      }
       default:
          if (subOp)
             PRINT("(SUBOP:%u) ", subOp);

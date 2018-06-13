@@ -58,6 +58,7 @@ enum operation
    OP_FMA,
    OP_SAD, // abs(src0 - src1) + src2
    OP_SHLADD,
+   OP_XMAD, // extended multiply-add (GM107+), does a lot of things
    OP_ABS,
    OP_NEG,
    OP_NOT,
@@ -251,6 +252,13 @@ enum operation
 #define NV50_IR_SUBOP_VOTE_ALL 0
 #define NV50_IR_SUBOP_VOTE_ANY 1
 #define NV50_IR_SUBOP_VOTE_UNI 2
+#define NV50_IR_SUBOP_XMAD_PSL (1 << 0)
+#define NV50_IR_SUBOP_XMAD_MRG (1 << 1)
+#define NV50_IR_SUBOP_XMAD_CLO (1 << 2)
+#define NV50_IR_SUBOP_XMAD_CHI (2 << 2)
+#define NV50_IR_SUBOP_XMAD_CSFU (3 << 2)
+#define NV50_IR_SUBOP_XMAD_CBCC (4 << 2)
+#define NV50_IR_SUBOP_XMAD_CMODE_MASK (0x7 << 2)
 
 #define NV50_IR_SUBOP_MINMAX_LOW  1
 #define NV50_IR_SUBOP_MINMAX_MED  2
@@ -527,6 +535,9 @@ struct Storage
 #define NV50_IR_MOD_SAT (1 << 2)
 #define NV50_IR_MOD_NOT (1 << 3)
 #define NV50_IR_MOD_NEG_ABS (NV50_IR_MOD_NEG | NV50_IR_MOD_ABS)
+// modifiers only for XMAD
+#define NV50_IR_MOD_H1   (1 << 4)
+#define NV50_IR_MOD_SEXT (1 << 5)
 
 #define NV50_IR_INTERP_MODE_MASK   0x3
 #define NV50_IR_INTERP_LINEAR      (0 << 0)
@@ -556,11 +567,14 @@ public:
    inline Modifier operator&(const Modifier m) const { return bits & m.bits; }
    inline Modifier operator|(const Modifier m) const { return bits | m.bits; }
    inline Modifier operator^(const Modifier m) const { return bits ^ m.bits; }
+   inline Modifier operator~() const { return ~bits; }
 
    operation getOp() const;
 
    inline int neg() const { return (bits & NV50_IR_MOD_NEG) ? 1 : 0; }
    inline int abs() const { return (bits & NV50_IR_MOD_ABS) ? 1 : 0; }
+   inline int h1() const { return (bits & NV50_IR_MOD_H1) ? 1 : 0; }
+   inline int sext() const { return (bits & NV50_IR_MOD_SEXT) ? 1 : 0; }
 
    inline operator bool() const { return bits ? true : false; }
 

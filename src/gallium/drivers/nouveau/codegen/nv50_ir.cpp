@@ -53,7 +53,8 @@ Modifier Modifier::operator*(const Modifier m) const
       b &= ~NV50_IR_MOD_NEG;
 
    a = (this->bits ^ b)      & (NV50_IR_MOD_NOT | NV50_IR_MOD_NEG);
-   c = (this->bits | m.bits) & (NV50_IR_MOD_ABS | NV50_IR_MOD_SAT);
+   c = (this->bits | m.bits) & (NV50_IR_MOD_ABS | NV50_IR_MOD_SAT |
+                                NV50_IR_MOD_H1 | NV50_IR_MOD_SEXT);
 
    return Modifier(a | c);
 }

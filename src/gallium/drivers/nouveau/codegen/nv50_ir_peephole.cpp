@@ -191,9 +191,16 @@ void
 LoadPropagation::checkSwapSrc01(Instruction *insn)
 {
    const Target *targ = prog->getTarget();
-   if (!targ->getOpInfo(insn).commutative)
-      if (insn->op != OP_SET && insn->op != OP_SLCT && insn->op != OP_SUB)
+   if (!targ->getOpInfo(insn).commutative) {
+      if (insn->op != OP_SET && insn->op != OP_SLCT &&
+          insn->op != OP_SUB && insn->op != OP_XMAD)
          return;
+      // XMAD is only commutative if both the CBCC and MRG flags are not set.
+      if (insn->op == OP_XMAD && (insn->subOp & 0x1c) == NV50_IR_SUBOP_XMAD_CBCC)
+         return;
+      if (insn->op == OP_XMAD && (insn->subOp & NV50_IR_SUBOP_XMAD_MRG))
+         return;
+   }
    if (insn->src(1).getFile() != FILE_GPR)
       return;
    // This is the special OP_SET used for alphatesting, we can't reverse its
@@ -488,6 +495,7 @@ Modifier::applyTo(ImmediateValue& imm) const
          imm.reg.data.s32 = -imm.reg.data.s32;
       if (bits & NV50_IR_MOD_NOT)
          imm.reg.data.s32 = ~imm.reg.data.s32;
+      // NOTE: applying the h1 and sext modifiers is confusing and not very useful
       break;
 
    case TYPE_F64:

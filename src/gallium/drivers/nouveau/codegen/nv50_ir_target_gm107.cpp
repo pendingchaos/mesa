@@ -60,6 +60,7 @@ TargetGM107::isOpSupported(operation op, DataType ty) const
    case OP_SQRT:
    case OP_DIV:
    case OP_MOD:
+   case OP_XMAD:
       return false;
    default:
       break;
