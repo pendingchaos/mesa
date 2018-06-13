@@ -60,8 +60,11 @@ TargetGM107::isOpSupported(operation op, DataType ty) const
    case OP_SQRT:
    case OP_DIV:
    case OP_MOD:
-   case OP_XMAD:
       return false;
+   case OP_XMAD:
+      if (isFloatType(ty))
+         return false;
+      break;
    default:
       break;
    }
@@ -231,6 +234,7 @@ TargetGM107::getLatency(const Instruction *insn) const
    case OP_SUB:
    case OP_VOTE:
    case OP_XOR:
+   case OP_XMAD:
       if (insn->dType != TYPE_F64)
          return 6;
       break;
