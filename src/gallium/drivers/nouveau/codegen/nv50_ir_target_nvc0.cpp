@@ -356,6 +356,18 @@ TargetNVC0::insnCanLoad(const Instruction *i, int s,
    if ((i->op == OP_SHL || i->op == OP_SHR) && typeSizeof(i->sType) == 8 &&
        sf == FILE_MEMORY_CONST)
       return false;
+   // constant buffer loads can't be used with cbcc xmads
+   if (i->op == OP_XMAD && (i->subOp & 0x1c) == NV50_IR_SUBOP_XMAD_CBCC &&
+       sf == FILE_MEMORY_CONST)
+      return false;
+   // constant buffer loads for the third operand can't be used with psl/mrg xmads
+   if (i->op == OP_XMAD && sf == FILE_MEMORY_CONST && s == 2 &&
+       (i->subOp & (NV50_IR_SUBOP_XMAD_PSL | NV50_IR_SUBOP_XMAD_MRG)))
+      return false;
+   // for xmads, immediates can't have the h1 flag set
+   if (i->op == OP_XMAD && sf == FILE_IMMEDIATE && s < 2 &&
+       i->subOp & NV50_IR_SUBOP_XMAD_H1(s))
+      return false;
 
    for (int k = 0; i->srcExists(k); ++k) {
       if (i->src(k).getFile() == FILE_IMMEDIATE) {
@@ -448,6 +460,8 @@ TargetNVC0::isOpSupported(operation op, DataType ty) const
       return false;
    if (op == OP_POW || op == OP_SQRT || op == OP_DIV || op == OP_MOD)
       return false;
+   if (op == OP_XMAD)
+      return false;
    return true;
 }
 
@@ -467,6 +481,7 @@ TargetNVC0::isModSupported(const Instruction *insn, int s, Modifier mod) const
       case OP_XOR:
       case OP_POPCNT:
       case OP_BFIND:
+      case OP_XMAD:
          break;
       case OP_SET:
          if (insn->sType != TYPE_F32)

@@ -86,6 +86,7 @@ const char *operationStr[OP_LAST + 1] =
    "fma",
    "sad",
    "shladd",
+   "xmad",
    "abs",
    "neg",
    "not",
@@ -238,6 +239,11 @@ static const char *cctlOpStr[] =
 static const char *barOpStr[] =
 {
    "sync", "arrive", "red and", "red or", "red popc"
+};
+ 
+static const char *xmadOpCModeStr[] =
+{
+   "clo", "chi", "csfu", "cbcc"
 };
 
 static const char *DataTypeStr[] =
@@ -625,6 +631,18 @@ void Instruction::print() const
          if (subOp < ARRAY_SIZE(barOpStr))
             PRINT("%s ", barOpStr[subOp]);
          break;
+      case OP_XMAD: {
+         if (subOp & NV50_IR_SUBOP_XMAD_PSL)
+            PRINT("psl ");
+         if (subOp & NV50_IR_SUBOP_XMAD_MRG)
+            PRINT("mrg ");
+         unsigned cmode = (subOp >> 2) & 0x7;
+         if (cmode && cmode <= ARRAY_SIZE(xmadOpCModeStr))
+            PRINT("%s ", xmadOpCModeStr[cmode - 1]);
+         for (int i = 0; i < 2; i++)
+            PRINT("h%d ", (subOp & NV50_IR_SUBOP_XMAD_H1(i)) ? 1 : 0);
+         break;
+      }
       default:
          if (subOp)
             PRINT("(SUBOP:%u) ", subOp);
