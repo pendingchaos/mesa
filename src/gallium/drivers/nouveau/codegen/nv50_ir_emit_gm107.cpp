@@ -155,6 +155,7 @@ private:
    void emitIMUL();
    void emitIMAD();
    void emitISCADD();
+   void emitXMAD();
    void emitIMNMX();
    void emitICMP();
    void emitISET();
@@ -1882,6 +1883,65 @@ CodeEmitterGM107::emitISCADD()
    emitGPR (0x08, insn->src(0));
    emitGPR (0x00, insn->def(0));
 }
+ 
+void
+CodeEmitterGM107::emitXMAD()
+{
+   assert(insn->src(0).getFile() == FILE_GPR);
+
+   bool constbuf = false;
+   bool psl_mrg = true;
+   bool immediate = false;
+   if (insn->src(2).getFile() == FILE_MEMORY_CONST) {
+      assert(insn->src(1).getFile() == FILE_GPR);
+      constbuf = true;
+      psl_mrg = false;
+      emitInsn(0x51000000);
+      emitGPR(0x27, insn->src(1));
+      emitCBUF(0x22, -1, 0x14, 16, 2, insn->src(2));
+   } else if (insn->src(1).getFile() == FILE_MEMORY_CONST) {
+      assert(insn->src(2).getFile() == FILE_GPR);
+      constbuf = true;
+      emitInsn(0x4e000000);
+      emitCBUF(0x22, -1, 0x14, 16, 2, insn->src(1));
+      emitGPR(0x27, insn->src(2));
+   } else if (insn->src(1).getFile() == FILE_IMMEDIATE) {
+      assert(insn->src(2).getFile() == FILE_GPR);
+      assert(!(insn->subOp & NV50_IR_SUBOP_XMAD_H1(1)));
+      immediate = false;
+      emitInsn(0x36000000);
+      emitIMMD(0x14, 19, insn->src(1));
+      emitGPR(0x27, insn->src(2));
+   } else {
+      assert(insn->src(1).getFile() == FILE_GPR);
+      assert(insn->src(2).getFile() == FILE_GPR);
+      emitInsn(0x5b000000);
+      emitGPR(0x14, insn->src(1));
+      emitGPR(0x27, insn->src(2));
+   }
+
+   if (psl_mrg)
+      emitField(constbuf ? 0x37 : 0x24, 2, insn->subOp & 0x3);
+   emitField(0x32, constbuf ? 2 : 3, (insn->subOp >> 2) & 0x7);
+
+   emitX(constbuf ? 0x36 : 0x26);
+   emitCC(0x2f);
+
+   emitGPR(0x0, insn->def(0));
+   emitGPR(0x8, insn->src(0));
+
+   // source flags
+   bool h1[2];
+   h1[0] = insn->subOp & NV50_IR_SUBOP_XMAD_H1(0);
+   h1[1] = insn->subOp & NV50_IR_SUBOP_XMAD_H1(1);
+   bool isSigned = isSignedType(insn->sType);
+   bool sext[2] = {h1[0] && isSigned, h1[1] && isSigned};
+
+   emitField(0x30, 2, sext[0] | (sext[1] << 1));
+   emitField(0x35, 1, h1[0]);
+   if (!immediate)
+      emitField(constbuf ? 0x34 : 0x23, 1, h1[1]);
+}
 
 void
 CodeEmitterGM107::emitIMNMX()
@@ -3253,6 +3313,9 @@ CodeEmitterGM107::emitInstruction(Instruction *i)
       break;
    case OP_SHLADD:
       emitISCADD();
+      break;
+   case OP_XMAD:
+      emitXMAD();
       break;
    case OP_MIN:
    case OP_MAX:
