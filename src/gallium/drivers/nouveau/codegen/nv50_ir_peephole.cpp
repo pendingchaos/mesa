@@ -379,6 +379,8 @@ private:
 
    CmpInstruction *findOriginForTestWithZero(Value *);
 
+   bool createMul(Value *def, Value *a, int32_t b, Value *c);
+
    unsigned int foldCount;
 
    BuildUtil bld;
@@ -953,10 +955,65 @@ ConstantFolding::opnd3(Instruction *i, ImmediateValue &imm2)
    }
 }
 
+bool
+ConstantFolding::createMul(Value *def, Value *a, int32_t b, Value *c)
+{
+   const Target *target = prog->getTarget();
+   int64_t absB = llabs(b);
+
+   //a * (2^shl) -> a << shl
+   if (b >= 0 && util_is_power_of_two_or_zero64(b)) {
+      int shl = util_logbase2_64(b);
+
+      if (c && target->isOpSupported(OP_SHLADD, TYPE_U32))
+         return bld.mkOp3(OP_SHLADD, TYPE_U32, def, a, bld.mkImm(shl), c);
+
+      Value *res = c ? bld.getSSA() : def;
+      bld.mkOp2(OP_SHL, TYPE_U32, res, a, bld.mkImm(shl));
+      if (c)
+         bld.mkOp2(OP_ADD, TYPE_U32, def, res, c);
+
+      return true;
+   }
+
+   //a * (2^shl + 1) -> a << shl + a
+   //a * -(2^shl + 1) -> -a << shl + a
+   //a * (2^shl - 1) -> a << shl - a
+   //a * -(2^shl - 1) -> -a << shl - a
+   if ((util_is_power_of_two_or_zero64(absB - 1) ||
+        util_is_power_of_two_or_zero64(absB + 1)) &&
+       target->isOpSupported(OP_SHLADD, TYPE_U32)) {
+      bool subA = util_is_power_of_two_or_zero64(absB + 1);
+      int shl = subA ? util_logbase2_64(absB + 1) : util_logbase2_64(absB - 1);
+
+      Value *res = c ? bld.getSSA() : def;
+      Instruction *insn = bld.mkOp3(OP_SHLADD, TYPE_U32, res, a, bld.mkImm(shl), a);
+      if (b < 0)
+         insn->src(0).mod = Modifier(NV50_IR_MOD_NEG);
+      if (subA)
+         insn->src(2).mod = Modifier(NV50_IR_MOD_NEG);
+
+      if (c)
+         bld.mkOp2(OP_ADD, TYPE_U32, def, res, c);
+
+      return true;
+   }
+
+   if (b >= 0 && b <= 0xffff && target->isOpSupported(OP_XMAD, TYPE_U32)) {
+      Value *tmp = bld.mkOp3v(OP_XMAD, TYPE_U32, bld.getSSA(),
+                              a, bld.mkImm(b), c ? c : bld.mkImm(0));
+      bld.mkOp3(OP_XMAD, TYPE_U32, def, a, bld.mkImm(b), tmp)->subOp =
+         NV50_IR_SUBOP_XMAD_PSL | NV50_IR_SUBOP_XMAD_H1(0);
+
+      return true;
+   }
+
+   return false;
+}
+
 void
 ConstantFolding::opnd(Instruction *i, ImmediateValue &imm0, int s)
 {
-   const Target *target = prog->getTarget();
    const int t = !s;
    const operation op = i->op;
    Instruction *newi = i;
@@ -1040,13 +1097,10 @@ ConstantFolding::opnd(Instruction *i, ImmediateValue &imm0, int s)
          i->setSrc(s, i->getSrc(t));
          i->src(s).mod = i->src(t).mod;
       } else
-      if (!isFloatType(i->sType) && !imm0.isNegative() && imm0.isPow2()) {
-         i->op = OP_SHL;
-         imm0.applyLog2();
-         i->setSrc(0, i->getSrc(t));
-         i->src(0).mod = i->src(t).mod;
-         i->setSrc(1, new_ImmediateValue(prog, imm0.reg.data.u32));
-         i->src(1).mod = 0;
+      if (!isFloatType(i->dType) && !i->src(t).mod) {
+         bld.setPosition(i, false);
+         if (createMul(i->getDef(0), i->getSrc(t), imm0.reg.data.s32, NULL))
+            delete_Instruction(prog, i);
       } else
       if (i->postFactor && i->sType == TYPE_F32) {
          /* Can't emit a postfactor with an immediate, have to fold it in */
@@ -1079,13 +1133,10 @@ ConstantFolding::opnd(Instruction *i, ImmediateValue &imm0, int s)
          i->setSrc(2, NULL);
          i->op = OP_ADD;
       } else
-      if (s == 1 && !imm0.isNegative() && imm0.isPow2() &&
-          !isFloatType(i->dType) &&
-          target->isOpSupported(OP_SHLADD, i->dType) &&
-          !i->subOp) {
-         i->op = OP_SHLADD;
-         imm0.applyLog2();
-         i->setSrc(1, new_ImmediateValue(prog, imm0.reg.data.u32));
+      if (!isFloatType(i->dType) && !i->subOp && !i->src(t).mod && !i->src(2).mod) {
+         bld.setPosition(i, false);
+         if (createMul(i->getDef(0), i->getSrc(t), imm0.reg.data.s32, i->getSrc(2)))
+            delete_Instruction(prog, i);
       }
       break;
    case OP_SUB:
