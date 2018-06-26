@@ -498,4 +498,46 @@ nvc0_launch_grid(struct pipe_context *pipe, const struct pipe_grid_info *info)
    nouveau_bufctx_reset(nvc0->bufctx_cp, NVC0_BIND_CP_SUF);
    nvc0->dirty_cp |= NVC0_NEW_CP_SURFACES;
    nvc0->images_dirty[5] |= nvc0->images_valid[5];
+
+   nvc0_update_compute_invocations_counter(nvc0, info);
+}
+
+static void
+nvc0_compute_update_indirect_invocations(struct nvc0_context *nvc0,
+                                         const struct pipe_grid_info *info) {
+   struct nv04_resource *grid_buf = nv04_resource(info->indirect);
+   struct nouveau_pushbuf *push = nvc0->base.pushbuf;
+   uint32_t read_off = nvc0->indirect_cp_inv_cycle ? 8 : 0;
+   uint32_t write_off = nvc0->indirect_cp_inv_cycle ? 0 : 8;
+
+   nouveau_pushbuf_space(push, 16, 0, 8);
+   PUSH_REFN(push, nvc0->indirect_cp_inv, NOUVEAU_BO_VRAM | NOUVEAU_BO_RDWR);
+   PUSH_REFN(push, grid_buf->bo, grid_buf->domain | NOUVEAU_BO_RD);
+   BEGIN_1IC0(push, NVC0_3D(MACRO_INC_INV_COUNTER), 13);
+   PUSH_DATA(push, 0);
+   nouveau_pushbuf_data(push, grid_buf->bo, grid_buf->offset + info->indirect_offset,
+                        12 | NVC0_IB_ENTRY_1_NO_PREFETCH);
+   PUSH_DATA(push, info->block[0]);
+   PUSH_DATA(push, info->block[1]);
+   PUSH_DATA(push, info->block[2]);
+   nouveau_pushbuf_data(push, nvc0->indirect_cp_inv, read_off,
+                        8 | NVC0_IB_ENTRY_1_NO_PREFETCH);
+   PUSH_DATA (push, 0);
+   PUSH_DATAh(push, 0);
+   PUSH_DATA (push, nvc0->indirect_cp_inv->offset + write_off);
+   PUSH_DATAh(push, nvc0->indirect_cp_inv->offset + write_off);
+
+   nvc0->indirect_cp_inv_cycle = !nvc0->indirect_cp_inv_cycle;
+}
+
+void
+nvc0_update_compute_invocations_counter(struct nvc0_context *nvc0,
+                                        const struct pipe_grid_info *info) {
+   if (unlikely(info->indirect)) {
+      nvc0_compute_update_indirect_invocations(nvc0, info);
+   } else {
+      uint64_t invocations = info->block[0] * info->block[1] * info->block[2];
+      invocations *= info->grid[0] * info->grid[1] * info->grid[2];
+      nvc0->direct_cp_inv += invocations;
+   }
 }

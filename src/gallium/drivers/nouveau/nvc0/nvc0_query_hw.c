@@ -127,6 +127,30 @@ nvc0_hw_destroy_query(struct nvc0_context *nvc0, struct nvc0_query *q)
    FREE(hq);
 }
 
+static void
+nvc0_hw_query_write_compute_invocations(struct nvc0_context *nvc0,
+                                        struct nouveau_bo *dest, uint32_t offset)
+{
+   struct nouveau_pushbuf *push = nvc0->base.pushbuf;
+   uint32_t read_off = nvc0->indirect_cp_inv_cycle ? 8 : 0;
+
+   PUSH_KICK(push); /* TODO: why does this work around incorrect reading of indirect_cp_inv? */
+
+   nouveau_pushbuf_space(push, 16, 0, 8);
+   PUSH_REFN(push, nvc0->indirect_cp_inv, NOUVEAU_BO_VRAM | NOUVEAU_BO_RD);
+   PUSH_REFN(push, dest, NOUVEAU_BO_GART | NOUVEAU_BO_WR);
+   BEGIN_1IC0(push, NVC0_3D(MACRO_INC_INV_COUNTER), 13);
+   PUSH_DATA(push, 0);
+   for (int i = 0; i < 6; i++)
+     PUSH_DATA(push, 0);
+   nouveau_pushbuf_data(push, nvc0->indirect_cp_inv, read_off,
+                        8 | NVC0_IB_ENTRY_1_NO_PREFETCH);
+   PUSH_DATA (push, nvc0->direct_cp_inv);
+   PUSH_DATAh(push, nvc0->direct_cp_inv);
+   PUSH_DATA (push, dest->offset + offset);
+   PUSH_DATAh(push, dest->offset + offset);
+}
+
 static boolean
 nvc0_hw_begin_query(struct nvc0_context *nvc0, struct nvc0_query *q)
 {
@@ -199,6 +223,7 @@ nvc0_hw_begin_query(struct nvc0_context *nvc0, struct nvc0_query *q)
       nvc0_hw_query_get(push, q, 0xc0 + 0x70, 0x0980a002); /* ROP, PIXELS */
       nvc0_hw_query_get(push, q, 0xc0 + 0x80, 0x0d808002); /* TCP, LAUNCHES */
       nvc0_hw_query_get(push, q, 0xc0 + 0x90, 0x0e809002); /* TEP, LAUNCHES */
+      nvc0_hw_query_write_compute_invocations(nvc0, hq->bo, hq->offset+0xc0+0xa0);
       break;
    default:
       break;
@@ -271,6 +296,7 @@ nvc0_hw_end_query(struct nvc0_context *nvc0, struct nvc0_query *q)
       nvc0_hw_query_get(push, q, 0x70, 0x0980a002); /* ROP, PIXELS */
       nvc0_hw_query_get(push, q, 0x80, 0x0d808002); /* TCP, LAUNCHES */
       nvc0_hw_query_get(push, q, 0x90, 0x0e809002); /* TEP, LAUNCHES */
+      nvc0_hw_query_write_compute_invocations(nvc0, hq->bo, hq->offset+0xa0);
       break;
    case PIPE_QUERY_TIMESTAMP_DISJOINT:
       /* This query is not issued on GPU because disjoint is forced to false */
@@ -353,9 +379,8 @@ nvc0_hw_get_query_result(struct nvc0_context *nvc0, struct nvc0_query *q,
       res64[0] = data64[1] - data64[3];
       break;
    case PIPE_QUERY_PIPELINE_STATISTICS:
-      for (i = 0; i < 10; ++i)
+      for (i = 0; i < 11; ++i)
          res64[i] = data64[i * 2] - data64[24 + i * 2];
-      result->pipeline_statistics.cs_invocations = 0;
       break;
    case NVC0_HW_QUERY_TFB_BUFFER_OFFSET:
       res32[0] = hq->data[1];

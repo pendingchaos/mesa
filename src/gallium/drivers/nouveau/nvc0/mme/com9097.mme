@@ -580,3 +580,85 @@ crs_loop:
    /* Enable */
    exit maddr 0x1452 /* CONSERVATIVE_RASTER */
    send 0x1
+
+/* NVC0_3D_MACRO_INC_INV_COUNTER
+ *
+ * This macro takes 6 values, num_groups_* and group_size_*, and adds their
+ * product to the current value and additional value; then it uses the query
+ * engine to write them to the destination address.
+ *
+ * It's used for keeping track of indirect compute invocations and copying
+ * the current value into a query's buffer.
+ *
+ * It uses SCRATCH[0].
+ *
+ * parm[0] = num_groups_x
+ * parm[1] = num_groups_y
+ * parm[2] = num_groups_z
+ * parm[3] = group_size_x
+ * parm[4] = group_size_y
+ * parm[5] = group_size_z
+ * parm[6] = low word of current value
+ * parm[7] = high word of current value
+ * parm[8] = low word of additional value to add
+ * parm[9] = high word of additional value to add
+ * parm[10] = low word of destination address
+ * parm[11] = high word of destination address
+ */
+.section #mme9097_inc_inv_counter
+   maddrsend 0x6d00 /* initialize SCRATCH[0] to 6 */
+   mov $r1 1
+   mov $r2 0
+iic_loop_start:
+   parm $r3
+   /* multiplication start */
+   mov $r4 0
+   mov $r5 0
+iic_mul_start:
+   braz annul $r3 #iic_mul_done
+iic_mul_body:
+   mov $r6 (extrinsrt 0x0 $r3 0 1 0)
+   braz $r6 #iic_mul_cont
+   mov $r3 (extrinsrt 0x0 $r3 1 31 0) /* shift right */
+   mov $r4 (add $r4 $r1)
+   mov $r5 (adc $r5 $r2)
+iic_mul_cont:
+   mov $r1 (add $r1 $r1) /* shift left, part 1 */
+   bra #iic_mul_start
+   mov $r2 (adc $r2 $r2) /* shift left, part 2 */
+iic_mul_done:
+   /* update product with result of multiplication */
+   mov $r1 $r4
+   mov $r2 $r5
+   /* loop counter stuff */
+   read $r3 0xd00
+   mov $r3 (add $r3 -1)
+   mov $r5 0xd00
+   branz $r3 #iic_loop_start
+   maddrsend (extrinsrt $r5 $r3 0 6 12) /* store new loop counter */
+   /* increment current value by newly-calculated invocation count */
+   parm $r6 /* current low */
+   parm $r7 /* current high */
+   mov $r6 (add $r6 $r1)
+   mov $r7 (adc $r7 $r2)
+   /* increment current value by an additional value */
+   parm $r1 /* additional low */
+   parm $r2 /* additional high */
+   mov $r6 (add $r6 $r1)
+   mov $r7 (adc $r7 $r2)
+   /* write out current value (in $r6,$r7) using the query engine */
+   parm $r1 /* address low */
+   parm $r2 /* address high */
+   maddr 0x16c0 /* QUERY_ADDRESS_HIGH */
+   send $r2
+   send $r1
+   send $r6
+   mov $r3 0x1000
+   send (extrinsrt 0x0 $r3 0 16 16)
+   mov $r1 (add $r1 0x4)
+   mov $r2 (adc $r2 0x0)
+   maddr 0x16c0 /* QUERY_ADDRESS_HIGH */
+   send $r2
+   send $r1
+   exit send $r7
+   send (extrinsrt 0x0 $r3 0 16 16)
