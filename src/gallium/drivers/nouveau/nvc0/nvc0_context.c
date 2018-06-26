@@ -216,6 +216,8 @@ nvc0_destroy(struct pipe_context *pipe)
       free(pos);
    }
 
+   nouveau_bo_ref(NULL, &nvc0->indirect_cp_inv);
+
    nouveau_context_destroy(&nvc0->base);
 }
 
@@ -477,6 +479,11 @@ nvc0_create(struct pipe_screen *pscreen, void *priv, unsigned ctxflags)
    memset(nvc0->tex_handles, ~0, sizeof(nvc0->tex_handles));
 
    util_dynarray_init(&nvc0->global_residents, NULL);
+
+   ret = nouveau_bo_new(screen->base.device, NOUVEAU_BO_VRAM, 0, 4096, NULL,
+                        &nvc0->indirect_cp_inv);
+   if (ret)
+      goto out_err;
 
    return pipe;
 
