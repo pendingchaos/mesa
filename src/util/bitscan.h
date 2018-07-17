@@ -286,6 +286,34 @@ u_bit_consecutive64(unsigned start, unsigned count)
    return (((uint64_t)1 << count) - 1) << start;
 }
 
+/* Returns the number of bits set.
+ *
+ * based on
+ * http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetKernighan
+ */
+static inline unsigned
+u_bit_count64(uint64_t val)
+{
+#ifdef __POPCNT__
+   return _mm_popcnt_u64(v);
+#else
+   unsigned result;
+   for (result = 0; val; result++)
+      val &= val - 1; /* clear the least significant bit set */
+   return result;
+#endif
+}
+
+/* Round the input to the next power of two.
+ * Zero is rounded to one.
+ */
+static inline uint64_t
+u_next_power_of_two(unsigned val)
+{
+   bool power_of_two_nonzero = util_is_power_of_two_or_zero64(val) && val;
+   return power_of_two_nonzero ? val : ((uint64_t)1 << util_last_bit64(val));
+}
+
 
 #ifdef __cplusplus
 }
