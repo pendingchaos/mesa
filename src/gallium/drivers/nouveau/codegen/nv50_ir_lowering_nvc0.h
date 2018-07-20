@@ -148,7 +148,7 @@ protected:
    void handlePIXLD(Instruction *);
 
    void checkPredicate(Instruction *);
-   Value *loadSuInfo32(Value *ptr, int slot, uint32_t off, bool bindless);
+   Value *loadSuInfo32(Value *ptr, int slot, uint32_t off);
 
    virtual bool visit(Instruction *);
 

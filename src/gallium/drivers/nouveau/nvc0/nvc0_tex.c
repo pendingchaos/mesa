@@ -1321,13 +1321,13 @@ nve4_create_image_handle(struct pipe_context *pipe,
    struct nvc0_screen *screen = nvc0->screen;
    int i = screen->img.next, s;
 
-   while (screen->img.entries[i]) {
-      i = (i + 1) & (NVE4_IMG_MAX_HANDLES - 1);
+   while (screen->img.entries[i] || i < NVC0_MAX_IMAGES) {
+      i = (i + 1) & (NVC0_SU_INFO_TABLE_SIZE - 1);
       if (i == screen->img.next)
          return 0;
    }
 
-   screen->img.next = (i + 1) & (NVE4_IMG_MAX_HANDLES - 1);
+   screen->img.next = (i + 1) & (NVC0_SU_INFO_TABLE_SIZE - 1);
    screen->img.entries[i] = calloc(1, sizeof(struct pipe_image_view));
    *screen->img.entries[i] = *view;
 
@@ -1337,7 +1337,7 @@ nve4_create_image_handle(struct pipe_context *pipe,
       PUSH_DATAh(push, screen->uniform_bo->offset + NVC0_CB_AUX_INFO(s));
       PUSH_DATA (push, screen->uniform_bo->offset + NVC0_CB_AUX_INFO(s));
       BEGIN_1IC0(push, NVC0_3D(CB_POS), 1 + 16);
-      PUSH_DATA (push, NVC0_CB_AUX_BINDLESS_INFO(i));
+      PUSH_DATA (push, NVC0_CB_AUX_SU_INFO(i));
       nve4_set_surface_info(push, view, nvc0);
    }
 
@@ -1349,7 +1349,7 @@ nve4_delete_image_handle(struct pipe_context *pipe, uint64_t handle)
 {
    struct nvc0_context *nvc0 = nvc0_context(pipe);
    struct nvc0_screen *screen = nvc0->screen;
-   int i = handle & (NVE4_IMG_MAX_HANDLES - 1);
+   int i = handle & (NVC0_SU_INFO_TABLE_SIZE - 1);
 
    free(screen->img.entries[i]);
    screen->img.entries[i] = NULL;
@@ -1365,7 +1365,7 @@ nve4_make_image_handle_resident(struct pipe_context *pipe, uint64_t handle,
    if (resident) {
       struct nvc0_resident *res = calloc(1, sizeof(struct nvc0_resident));
       struct pipe_image_view *view =
-         screen->img.entries[handle & (NVE4_IMG_MAX_HANDLES - 1)];
+         screen->img.entries[handle & (NVC0_SU_INFO_TABLE_SIZE - 1)];
       assert(view);
 
       if (view->resource->target == PIPE_BUFFER &&

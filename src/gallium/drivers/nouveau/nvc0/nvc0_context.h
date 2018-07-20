@@ -143,15 +143,12 @@
 /* 32 user buffers, at 4 32-bits integers each */
 #define NVC0_CB_AUX_BUF_INFO(i)     0x2a0 + (i) * 4 * 4
 #define NVC0_CB_AUX_BUF_SIZE        (NVC0_MAX_BUFFERS * 4 * 4)
-/* 8 surfaces, at 16 32-bits integers each */
-#define NVC0_CB_AUX_SU_INFO(i)      0x4a0 + (i) * 16 * 4
-#define NVC0_CB_AUX_SU_SIZE         (NVC0_MAX_IMAGES * 16 * 4)
 /* 1 64-bits address and 1 32-bits sequence */
-#define NVC0_CB_AUX_MP_INFO         0x6a0
+#define NVC0_CB_AUX_MP_INFO         0x420
 #define NVC0_CB_AUX_MP_SIZE         3 * 4
-/* 512 64-byte blocks for bindless image handles */
-#define NVC0_CB_AUX_BINDLESS_INFO(i) 0x6b0 + (i) * 16 * 4
-#define NVC0_CB_AUX_BINDLESS_SIZE   (NVE4_IMG_MAX_HANDLES * 16 * 4)
+/* 512 surfaces, at 16 32-bits integers each */
+#define NVC0_CB_AUX_SU_INFO(i)      0x430 + (i) * 16 * 4
+#define NVC0_CB_AUX_SU_SIZE         (NVC0_SU_INFO_TABLE_SIZE * 16 * 4)
 /* 4 32-bits floats for the vertex runout, put at the end */
 #define NVC0_CB_AUX_RUNOUT_INFO     NVC0_CB_USR_SIZE + (NVC0_CB_AUX_SIZE * 6)
 

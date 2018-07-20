@@ -13,7 +13,9 @@
 
 #define NVC0_TIC_MAX_ENTRIES 2048
 #define NVC0_TSC_MAX_ENTRIES 2048
-#define NVE4_IMG_MAX_HANDLES 512
+/* first NVC0_MAX_IMAGES used for information on image bindings on Keper+
+ * the rest are used for bindless on only Kepler */
+#define NVC0_SU_INFO_TABLE_SIZE 512
 
 /* doesn't count driver-reserved slot */
 #define NVC0_MAX_PIPE_CONSTBUFS         15
@@ -98,6 +100,7 @@ struct nvc0_screen {
    } tsc;
 
    struct {
+      /* first NVC0_MAX_IMAGES entrie are unused */
       struct pipe_image_view **entries;
       int next;
    } img;

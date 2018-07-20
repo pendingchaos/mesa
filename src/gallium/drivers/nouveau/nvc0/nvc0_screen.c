@@ -1317,7 +1317,7 @@ nvc0_screen_create(struct nouveau_device *dev)
    PUSH_KICK (push);
 
    screen->tic.entries = CALLOC(
-         NVC0_TIC_MAX_ENTRIES + NVC0_TSC_MAX_ENTRIES + NVE4_IMG_MAX_HANDLES,
+         NVC0_TIC_MAX_ENTRIES + NVC0_TSC_MAX_ENTRIES + NVC0_SU_INFO_TABLE_SIZE,
          sizeof(void *));
    screen->tsc.entries = screen->tic.entries + NVC0_TIC_MAX_ENTRIES;
    screen->img.entries = (void *)(screen->tsc.entries + NVC0_TSC_MAX_ENTRIES);
