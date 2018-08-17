@@ -26,6 +26,7 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <math.h>
+#include "util/u_math.h"
 
 #ifdef HAVE_VALGRIND
 #include <valgrind.h>

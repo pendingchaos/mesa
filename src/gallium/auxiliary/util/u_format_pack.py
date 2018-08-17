@@ -689,16 +689,16 @@ def is_format_hand_written(format):
 
 
 def generate(formats):
-    print
-    print '#include "pipe/p_compiler.h"'
-    print '#include "u_math.h"'
-    print '#include "u_half.h"'
-    print '#include "u_format.h"'
-    print '#include "u_format_other.h"'
-    print '#include "util/format_srgb.h"'
-    print '#include "u_format_yuv.h"'
-    print '#include "u_format_zs.h"'
-    print
+    print('')
+    print('#include "pipe/p_compiler.h"')
+    print('#include "util/u_math.h"')
+    print('#include "u_half.h"')
+    print('#include "u_format.h"')
+    print('#include "u_format_other.h"')
+    print('#include "util/format_srgb.h"')
+    print('#include "u_format_yuv.h"')
+    print('#include "u_format_zs.h"')
+    print('')
 
     for format in formats:
         if not is_format_hand_written(format):

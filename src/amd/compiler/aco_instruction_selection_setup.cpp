@@ -28,7 +28,7 @@
 #include "vulkan/radv_shader.h"
 #include "common/sid.h"
 
-#include "gallium/auxiliary/util/u_math.h"
+#include "util/u_math.h"
 
 namespace aco {
 
