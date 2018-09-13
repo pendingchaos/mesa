@@ -442,6 +442,7 @@ optimizations = [
    (('fabs', ('b2f', a)), ('b2f', a)),
    (('iabs', ('b2i', a)), ('b2i', a)),
    (('inot', ('f2b', a)), ('feq', a, 0.0)),
+   (('fmul', ('b2f', a), b), ('bcsel', a, b, 0.0)),
 
    # Packing and then unpacking does nothing
    (('unpack_64_2x32_split_x', ('pack_64_2x32_split', a, b)), a),
