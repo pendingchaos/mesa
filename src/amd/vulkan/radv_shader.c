@@ -677,7 +677,10 @@ shader_variant_create(struct radv_device *device,
 					    &variant->config, &variant->info,
 					    options);
 	} else {
-		if (shaders[0]->info.stage == MESA_SHADER_FRAGMENT || shaders[0]->info.stage == MESA_SHADER_COMPUTE) {
+		bool vertex = shaders[0]->info.stage == MESA_SHADER_VERTEX && getenv("ACO_VS");
+		if (options->key.vs.as_ls || options->key.vs.as_es)
+			vertex = false;
+		if (shaders[0]->info.stage == MESA_SHADER_FRAGMENT || shaders[0]->info.stage == MESA_SHADER_COMPUTE || vertex) {
 			bool aco_compile_time = device->instance->debug_flags & RADV_DEBUG_COMPILETIME;
 			struct timespec user1,user2;
 			if (aco_compile_time) {

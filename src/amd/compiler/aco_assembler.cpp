@@ -4,6 +4,7 @@
 #include <iomanip>
 
 #include "aco_ir.h"
+#include "common/sid.h"
 
 namespace aco {
 
@@ -299,10 +300,18 @@ void fix_exports(asm_context& ctx, std::vector<uint32_t>& out, Program* program)
       {
          if ((*it)->format == Format::EXP && endBlock) {
             Export_instruction* exp = static_cast<Export_instruction*>((*it).get());
-            exp->done = true;
-            exp->valid_mask = true;
-            exported = true;
-            break;
+            if (program->stage == MESA_SHADER_VERTEX) {
+               if (exp->dest >= V_008DFC_SQ_EXP_POS && exp->dest <= (V_008DFC_SQ_EXP_POS + 3)) {
+                  exp->done = true;
+                  exported = true;
+                  break;
+               }
+            } else {
+               exp->done = true;
+               exp->valid_mask = true;
+               exported = true;
+               break;
+            }
          } else if ((*it)->num_definitions && (*it)->getDefinition(0).physReg() == exec)
             break;
          else if ((*it)->opcode == aco_opcode::s_endpgm) {
@@ -322,7 +331,10 @@ void fix_exports(asm_context& ctx, std::vector<uint32_t>& out, Program* program)
       exp->compressed = false;
       exp->done = true;
       exp->valid_mask = true;
-      exp->dest = 9; /* NULL */
+      if (program->stage == MESA_SHADER_FRAGMENT)
+         exp->dest = 9; /* NULL */
+      else
+         exp->dest = V_008DFC_SQ_EXP_POS;
       /* insert the null export 1 instruction before endpgm */
       block->instructions.insert(block->instructions.end() - 1, std::move(exp));
    }
@@ -342,7 +354,7 @@ std::vector<uint32_t> emit_program(Program* program)
    asm_context ctx;
    ctx.block_offset.resize(program->blocks.size());
    std::vector<uint32_t> out;
-   if (program->stage == MESA_SHADER_FRAGMENT)
+   if (program->stage == MESA_SHADER_FRAGMENT || program->stage == MESA_SHADER_VERTEX)
       fix_exports(ctx, out, program);
    for (auto const& block : program->blocks)
    {
