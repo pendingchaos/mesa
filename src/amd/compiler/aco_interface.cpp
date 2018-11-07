@@ -31,7 +31,7 @@ void aco_compile_shader(struct nir_shader *shader, struct ac_shader_config* conf
                         struct ac_shader_binary* binary, struct radv_shader_variant_info *info,
                         struct radv_nir_compiler_options *options)
 {
-   if (shader->info.stage != MESA_SHADER_FRAGMENT && shader->info.stage != MESA_SHADER_COMPUTE)
+   if (shader->info.stage != MESA_SHADER_FRAGMENT && shader->info.stage != MESA_SHADER_VERTEX && shader->info.stage != MESA_SHADER_COMPUTE)
       return;
 
    struct ac_shader_config local_config = *config;
@@ -94,7 +94,7 @@ void aco_compile_shader(struct nir_shader *shader, struct ac_shader_config* conf
    //std::cerr << "After Assembly:\n";
    //std::cerr << "Num VGPRs: " << program->config->num_vgprs << "\n";
    //std::cerr << "Num SGPRs: " << program->config->num_sgprs << "\n";
-   char llvm_mc[] = "/usr/bin/llvm-mc-7";
+   //char llvm_mc[] = "/usr/bin/llvm-mc-7";
    //aco::print_asm(code, llvm_mc, std::cerr);
    //std::cerr << binary->disasm_string;
    uint32_t* bin = (uint32_t*) malloc(code.size() * sizeof(uint32_t));

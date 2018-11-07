@@ -31,6 +31,7 @@
 #include "aco_ir.h"
 #include "aco_interface.h"
 #include "aco_instruction_selection_setup.cpp"
+#include "util/fast_idiv_by_const.h"
 
 namespace aco {
 namespace {
@@ -98,6 +99,15 @@ public:
 static void visit_cf_list(struct isel_context *ctx,
                           struct exec_list *list);
 
+void set_ssa_temp(struct isel_context *ctx, nir_ssa_def *def, Temp tmp)
+{
+   RegClass rc = ctx->reg_class[def->index];
+   assert(rc == tmp.regClass());
+   assert(ctx->allocated.find(def->index) == ctx->allocated.end());
+
+   ctx->allocated.insert({def->index, tmp.id()});
+}
+
 Temp get_ssa_temp(struct isel_context *ctx, nir_ssa_def *def)
 {
    RegClass rc = ctx->reg_class[def->index];
@@ -164,6 +174,79 @@ Temp as_vgpr(isel_context *ctx, Temp val)
    }
    assert(val.type() == RegType::vgpr);
    return val;
+}
+
+//assumes a != 0xffffffff
+void emit_v_div_u32(isel_context *ctx, Temp dst, Temp a, uint32_t b)
+{
+   assert(b != 0);
+
+   if (util_is_power_of_two_or_zero(b)) {
+      std::unique_ptr<VOP2_instruction> shift{create_instruction<VOP2_instruction>(aco_opcode::v_lshrrev_b32, Format::VOP2, 2, 1)};
+      shift->getOperand(0) = Operand((uint32_t) util_logbase2(b));
+      shift->getOperand(1) = Operand(a);
+      shift->getDefinition(0) = Definition(dst);
+      ctx->block->instructions.emplace_back(std::move(shift));
+      return;
+   }
+
+   util_fast_udiv_info info = util_compute_fast_udiv_info(b, 32, 32);
+
+   assert(info.multiplier <= 0xffffffff);
+
+   bool pre_shift = info.pre_shift != 0;
+   bool increment = info.increment != 0;
+   bool multiply = true;
+   bool post_shift = info.post_shift != 0;
+
+   if (!pre_shift && !increment && !multiply && !post_shift) {
+      std::unique_ptr<VOP1_instruction> mov{create_instruction<VOP1_instruction>(aco_opcode::v_mov_b32, Format::VOP1, 1, 1)};
+      mov->getOperand(0) = Operand(a);
+      mov->getDefinition(0) = Definition(dst);
+      ctx->block->instructions.emplace_back(std::move(mov));
+      return;
+   }
+
+   Temp pre_shift_dst = a;
+   if (pre_shift) {
+      pre_shift_dst = (increment || multiply || post_shift) ? Temp{ctx->program->allocateId(), v1} : dst;
+      std::unique_ptr<VOP2_instruction> pre_shift{create_instruction<VOP2_instruction>(aco_opcode::v_lshrrev_b32, Format::VOP2, 2, 1)};
+      pre_shift->getOperand(0) = Operand((uint32_t) info.pre_shift);
+      pre_shift->getOperand(1) = Operand(a);
+      pre_shift->getDefinition(0) = Definition(pre_shift_dst);
+      ctx->block->instructions.emplace_back(std::move(pre_shift));
+   }
+
+   Temp increment_dst = pre_shift_dst;
+   if (increment) {
+      increment_dst = (post_shift || multiply) ? Temp{ctx->program->allocateId(), v1} : dst;
+      emit_v_add32(ctx, increment_dst, Operand((uint32_t) info.increment), Operand(pre_shift_dst));
+   }
+
+   Temp multiply_dst = increment_dst;
+   if (multiply) {
+      multiply_dst = post_shift ? Temp{ctx->program->allocateId(), v1} : dst;
+
+      Temp multiply_operand{ctx->program->allocateId(), v1};
+      std::unique_ptr<VOP1_instruction> mov{create_instruction<VOP1_instruction>(aco_opcode::v_mov_b32, Format::VOP1, 1, 1)};
+      mov->getOperand(0) = Operand((uint32_t) info.multiplier);
+      mov->getDefinition(0) = Definition(multiply_operand);
+      ctx->block->instructions.emplace_back(std::move(mov));
+
+      std::unique_ptr<VOP3A_instruction> multiply{create_instruction<VOP3A_instruction>(aco_opcode::v_mul_hi_u32, Format::VOP3A, 2, 1)};
+      multiply->getOperand(0) = Operand(increment_dst);
+      multiply->getOperand(1) = Operand(multiply_operand);
+      multiply->getDefinition(0) = Definition(multiply_dst);
+      ctx->block->instructions.emplace_back(std::move(multiply));
+   }
+
+   if (post_shift) {
+      std::unique_ptr<VOP2_instruction> post_shift{create_instruction<VOP2_instruction>(aco_opcode::v_lshrrev_b32, Format::VOP2, 2, 1)};
+      post_shift->getOperand(0) = Operand((uint32_t) info.post_shift);
+      post_shift->getOperand(1) = Operand(multiply_dst);
+      post_shift->getDefinition(0) = Definition(dst);
+      ctx->block->instructions.emplace_back(std::move(post_shift));
+   }
 }
 
 void emit_extract_vector(isel_context* ctx, Temp src, uint32_t idx, Temp dst)
@@ -1470,109 +1553,138 @@ void visit_load_const(isel_context *ctx, nir_load_const_instr *instr)
 
 void visit_store_output(isel_context *ctx, nir_intrinsic_instr *instr)
 {
-   unsigned write_mask = nir_intrinsic_write_mask(instr);
-   Operand values[4];
-   Temp src = get_ssa_temp(ctx, instr->src[0].ssa);
-   for (unsigned i = 0; i < 4; ++i) {
-      if (write_mask & (1 << i)) {
-         Temp tmp = emit_extract_vector(ctx, src, i, v1);
-         values[i] = Operand(tmp);
-      } else {
-         values[i] = Operand();
+   if (ctx->stage == MESA_SHADER_VERTEX) {
+      // Control flow requires care since this modifies state and could
+      // require insertion of phi instructions.
+      // Situations like this are difficult to create though.
+      assert(!ctx->cf_info.in_cf); //TODO: handle this
+
+      unsigned write_mask = nir_intrinsic_write_mask(instr);
+      unsigned component = nir_intrinsic_component(instr);
+      Temp src = get_ssa_temp(ctx, instr->src[0].ssa);
+      gl_varying_slot slot = gl_varying_slot(nir_intrinsic_base(instr) / 4);
+
+      nir_instr *off_instr = instr->src[1].ssa->parent_instr;
+      if (off_instr->type != nir_instr_type_load_const ||
+          nir_instr_as_load_const(off_instr)->value.u32[0] != 0) {
+         fprintf(stderr, "Unimplemented nir_intrinsic_store_output offset\n");
+         nir_print_instr(off_instr, stderr);
+         fprintf(stderr, "\n");
       }
-   }
 
-   unsigned index = nir_intrinsic_base(instr) / 4;
-   index = index - FRAG_RESULT_DATA0;
-   unsigned target = V_008DFC_SQ_EXP_MRT + index;
-   unsigned col_format = (ctx->options->key.fs.col_format >> (4 * index)) & 0xf;
-   //bool is_int8 = (ctx->options->key.fs.is_int8 >> index) & 1;
-   //bool is_int10 = (ctx->options->key.fs.is_int10 >> index) & 1;
-   unsigned enabled_channels = 0xF;
-   aco_opcode compr_op = (aco_opcode)0;
-
-   switch (col_format)
-   {
-   case V_028714_SPI_SHADER_ZERO:
-      enabled_channels = 0; /* writemask */
-      target = V_008DFC_SQ_EXP_NULL;
-      break;
-
-   case V_028714_SPI_SHADER_32_R:
-      enabled_channels = 1;
-      break;
-
-   case V_028714_SPI_SHADER_32_GR:
-      enabled_channels = 0x3;
-      break;
-
-   case V_028714_SPI_SHADER_32_AR:
-      enabled_channels = 0x9;
-      break;
-
-   case V_028714_SPI_SHADER_FP16_ABGR:
-      enabled_channels = 0;//0x5;
-      compr_op = aco_opcode::v_cvt_pkrtz_f16_f32;
-      break;
-
-   case V_028714_SPI_SHADER_UNORM16_ABGR:
-      enabled_channels = 0x5;
-      compr_op = aco_opcode::v_cvt_pknorm_u16_f32;
-      break;
-
-   case V_028714_SPI_SHADER_SNORM16_ABGR:
-      enabled_channels = 0x5;
-      compr_op = aco_opcode::v_cvt_pknorm_i16_f32;
-      break;
-
-   case V_028714_SPI_SHADER_UINT16_ABGR:
-      enabled_channels = 0x5;
-      compr_op = aco_opcode::v_cvt_pk_u16_u32;
-      break;
-
-   case V_028714_SPI_SHADER_SINT16_ABGR:
-      enabled_channels = 0x5;
-      compr_op = aco_opcode::v_cvt_pk_i16_i32;
-      break;
-
-   default:
-   case V_028714_SPI_SHADER_32_ABGR:
-      break;
-   }
-
-   if ((bool)compr_op)
-   {
-      for (int i = 0; i < 2; i++)
-      {
-         /* check if at least one of the values to be compressed is enabled */
-         unsigned enabled = (write_mask >> (i*2) | write_mask >> (i*2+1)) & 0x1;
-         if (enabled) {
-            enabled_channels |= enabled << (i*2);
-            std::unique_ptr<VOP3A_instruction> compr{create_instruction<VOP3A_instruction>(compr_op, Format::VOP3A, 2, 1)};
-            Temp tmp{ctx->program->allocateId(), v1};
-            compr->getOperand(0) = values[i*2];
-            compr->getOperand(1) = values[i*2+1];
-            compr->getDefinition(0) = Definition(tmp);
+      for (unsigned i = 0; i < 4; ++i) {
+         if (write_mask & (1 << i)) {
+            ctx->vs_output.mask[slot] |= 1 << (component + i);
+            ctx->vs_output.outputs[slot][component + i] = emit_extract_vector(ctx, src, i, v1);
+         }
+      }
+   } else if (ctx->stage == MESA_SHADER_FRAGMENT) {
+      unsigned write_mask = nir_intrinsic_write_mask(instr);
+      Operand values[4];
+      Temp src = get_ssa_temp(ctx, instr->src[0].ssa);
+      for (unsigned i = 0; i < 4; ++i) {
+         if (write_mask & (1 << i)) {
+            Temp tmp = emit_extract_vector(ctx, src, i, v1);
             values[i] = Operand(tmp);
-            ctx->block->instructions.emplace_back(std::move(compr));
          } else {
             values[i] = Operand();
          }
       }
-      values[2] = Operand();
-      values[3] = Operand();
+
+      unsigned index = nir_intrinsic_base(instr) / 4;
+      index = index - FRAG_RESULT_DATA0;
+      unsigned target = V_008DFC_SQ_EXP_MRT + index;
+      unsigned col_format = (ctx->options->key.fs.col_format >> (4 * index)) & 0xf;
+      //bool is_int8 = (ctx->options->key.fs.is_int8 >> index) & 1;
+      //bool is_int10 = (ctx->options->key.fs.is_int10 >> index) & 1;
+      unsigned enabled_channels = 0xF;
+      aco_opcode compr_op = (aco_opcode)0;
+
+      switch (col_format)
+      {
+      case V_028714_SPI_SHADER_ZERO:
+         enabled_channels = 0; /* writemask */
+         target = V_008DFC_SQ_EXP_NULL;
+         break;
+
+      case V_028714_SPI_SHADER_32_R:
+         enabled_channels = 1;
+         break;
+
+      case V_028714_SPI_SHADER_32_GR:
+         enabled_channels = 0x3;
+         break;
+
+      case V_028714_SPI_SHADER_32_AR:
+         enabled_channels = 0x9;
+         break;
+
+      case V_028714_SPI_SHADER_FP16_ABGR:
+         enabled_channels = 0;//0x5;
+         compr_op = aco_opcode::v_cvt_pkrtz_f16_f32;
+         break;
+
+      case V_028714_SPI_SHADER_UNORM16_ABGR:
+         enabled_channels = 0x5;
+         compr_op = aco_opcode::v_cvt_pknorm_u16_f32;
+         break;
+
+      case V_028714_SPI_SHADER_SNORM16_ABGR:
+         enabled_channels = 0x5;
+         compr_op = aco_opcode::v_cvt_pknorm_i16_f32;
+         break;
+
+      case V_028714_SPI_SHADER_UINT16_ABGR:
+         enabled_channels = 0x5;
+         compr_op = aco_opcode::v_cvt_pk_u16_u32;
+         break;
+
+      case V_028714_SPI_SHADER_SINT16_ABGR:
+         enabled_channels = 0x5;
+         compr_op = aco_opcode::v_cvt_pk_i16_i32;
+         break;
+
+      default:
+      case V_028714_SPI_SHADER_32_ABGR:
+         break;
+      }
+
+      if ((bool)compr_op)
+      {
+         for (int i = 0; i < 2; i++)
+         {
+            /* check if at least one of the values to be compressed is enabled */
+            unsigned enabled = (write_mask >> (i*2) | write_mask >> (i*2+1)) & 0x1;
+            if (enabled) {
+               enabled_channels |= enabled << (i*2);
+               std::unique_ptr<VOP3A_instruction> compr{create_instruction<VOP3A_instruction>(compr_op, Format::VOP3A, 2, 1)};
+               Temp tmp{ctx->program->allocateId(), v1};
+               compr->getOperand(0) = values[i*2];
+               compr->getOperand(1) = values[i*2+1];
+               compr->getDefinition(0) = Definition(tmp);
+               values[i] = Operand(tmp);
+               ctx->block->instructions.emplace_back(std::move(compr));
+            } else {
+               values[i] = Operand();
+            }
+         }
+         values[2] = Operand();
+         values[3] = Operand();
+      }
+
+      std::unique_ptr<Export_instruction> exp{create_instruction<Export_instruction>(aco_opcode::exp, Format::EXP, 4, 0)};
+      exp->valid_mask = false; // TODO
+      exp->done = false; // TODO
+      exp->compressed = (bool) compr_op;
+      exp->dest = target;
+      exp->enabled_mask = enabled_channels;
+      for (int i = 0; i < 4; i++)
+         exp->getOperand(i) = values[i];
+
+      ctx->block->instructions.emplace_back(std::move(exp));
+   } else {
+      unreachable("Shader stage not implemented");
    }
-
-   std::unique_ptr<Export_instruction> exp{create_instruction<Export_instruction>(aco_opcode::exp, Format::EXP, 4, 0)};
-   exp->valid_mask = false; // TODO
-   exp->done = false; // TODO
-   exp->compressed = (bool) compr_op;
-   exp->dest = target;
-   exp->enabled_mask = enabled_channels;
-   for (int i = 0; i < 4; i++)
-      exp->getOperand(i) = values[i];
-
-   ctx->block->instructions.emplace_back(std::move(exp));
 }
 
 void emit_interp_instr(isel_context *ctx, unsigned idx, unsigned component, Temp src, Temp dst)
@@ -1642,21 +1754,34 @@ void visit_load_input(isel_context *ctx, nir_intrinsic_instr *instr)
          ctx->vertex_buffers = vertex_buffers;
       }
 
-      unsigned offset = (nir_intrinsic_base(instr) / 4 - VERT_ATTRIB_GENERIC0) * 16;
+      unsigned location = nir_intrinsic_base(instr) / 4 - VERT_ATTRIB_GENERIC0;
       std::unique_ptr<Instruction> load;
       load.reset(create_instruction<SMEM_instruction>(aco_opcode::s_load_dwordx4, Format::SMEM, 2, 1));
       load->getOperand(0) = Operand(vertex_buffers);
-      load->getOperand(1) = Operand((uint32_t) offset);
+      load->getOperand(1) = Operand((uint32_t) location * 16u);
       Temp list = {ctx->program->allocateId(), s4};
       load->getDefinition(0) = Definition(list);
       ctx->block->instructions.emplace_back(std::move(load));
 
       Temp index = {ctx->program->allocateId(), v1};
-      if (ctx->options->key.vs.instance_rate_inputs & (1u << offset)) {
-         fprintf(stderr, "Unimplemented: instance rate inputs\n");
-         nir_print_instr(&instr->instr, stderr);
-         fprintf(stderr, "\n");
-         abort();
+      if (ctx->options->key.vs.instance_rate_inputs & (1u << location)) {
+         uint32_t divisor = ctx->options->key.vs.instance_rate_divisors[location];
+         if (divisor) {
+            ctx->needs_instance_id = true;
+
+            emit_v_add32(ctx, index, Operand(ctx->start_instance), Operand(ctx->instance_id));
+
+            if (divisor != 1) {
+               Temp new_index = {ctx->program->allocateId(), v1};
+               emit_v_div_u32(ctx, new_index, index, divisor);
+               index = new_index;
+            }
+         } else {
+            std::unique_ptr<VOP1_instruction> mov{create_instruction<VOP1_instruction>(aco_opcode::v_mov_b32, Format::VOP1, 1, 1)};
+            mov->getOperand(0) = Operand((uint32_t) 0);
+            mov->getDefinition(0) = Definition(index);
+            ctx->block->instructions.emplace_back(std::move(mov));
+         }
       } else {
          emit_v_add32(ctx, index, Operand(ctx->base_vertex), Operand(ctx->vertex_id));
       }
@@ -1687,7 +1812,9 @@ void visit_load_input(isel_context *ctx, nir_intrinsic_instr *instr)
       mubuf->idxen = true;
       ctx->block->instructions.emplace_back(std::move(mubuf));
 
-      unsigned alpha_adjust = (ctx->options->key.vs.alpha_adjust >> (offset * 2)) & 3;
+      emit_split_vector(ctx, dst, dst.size());
+
+      unsigned alpha_adjust = (ctx->options->key.vs.alpha_adjust >> (location * 2)) & 3;
       if (alpha_adjust != RADV_ALPHA_ADJUST_NONE) {
          fprintf(stderr, "Unimplemented alpha adjust\n");
          nir_print_instr(&instr->instr, stderr);
@@ -3136,6 +3263,21 @@ void visit_intrinsic(isel_context *ctx, nir_intrinsic_instr *instr)
       ctx->block->instructions.emplace_back(std::move(mbcnt));
       break;
    }
+   case nir_intrinsic_load_vertex_id_zero_base:
+      set_ssa_temp(ctx, &instr->dest.ssa, ctx->vertex_id);
+      break;
+   case nir_intrinsic_load_first_vertex:
+      set_ssa_temp(ctx, &instr->dest.ssa, ctx->base_vertex);
+      break;
+   case nir_intrinsic_load_base_instance:
+      set_ssa_temp(ctx, &instr->dest.ssa, ctx->start_instance);
+      break;
+   case nir_intrinsic_load_instance_id:
+      set_ssa_temp(ctx, &instr->dest.ssa, ctx->instance_id);
+      break;
+   case nir_intrinsic_load_view_index:
+      set_ssa_temp(ctx, &instr->dest.ssa, ctx->view_index);
+      break;
    default:
       fprintf(stderr, "Unimplemented intrinsic instr: ");
       nir_print_instr(&instr->instr, stderr);
@@ -3872,6 +4014,9 @@ static void visit_loop(isel_context *ctx, nir_loop *loop)
    save_exec->getDefinition(0) = Definition(orig_exec);
    ctx->block->instructions.emplace_back(std::move(save_exec));
 
+   bool in_cf_old = ctx->cf_info.in_cf;
+   ctx->cf_info.in_cf = true;
+
    Block* loop_entry = ctx->program->createAndInsertBlock();
    Block* loop_exit = new Block();
    branch.reset(create_instruction<Pseudo_branch_instruction>(aco_opcode::p_branch, Format::PSEUDO_BRANCH, 0, 0));
@@ -3945,6 +4090,8 @@ static void visit_loop(isel_context *ctx, nir_loop *loop)
       ctx->block->instructions.emplace_back(std::move(restore));
    }
 
+   ctx->cf_info.in_cf = in_cf_old;
+
    append_logical_start(ctx->block);
 
    /* trim linear phis in loop header */
@@ -3970,6 +4117,9 @@ static void visit_if(isel_context *ctx, nir_if *if_stmt)
 {
    Temp cond32 = get_ssa_temp(ctx, if_stmt->condition.ssa);
    std::unique_ptr<Pseudo_branch_instruction> branch;
+
+   bool in_cf_old = ctx->cf_info.in_cf;
+   ctx->cf_info.in_cf = true;
 
    if (cond32.type() == RegType::sgpr) { /* uniform condition */
       /**
@@ -4270,6 +4420,8 @@ static void visit_if(isel_context *ctx, nir_if *if_stmt)
       append_logical_start(BB_endif);
       ctx->block = BB_endif;
    }
+
+   ctx->cf_info.in_cf = in_cf_old;
 }
 
 static void visit_cf_list(isel_context *ctx,
@@ -4289,6 +4441,118 @@ static void visit_cf_list(isel_context *ctx,
       default:
          unreachable("unimplemented cf list type");
       }
+   }
+}
+
+static void export_vs_varying(isel_context *ctx, int slot, bool is_pos, int *next_pos)
+{
+   int offset = ctx->program->info->vs.outinfo.vs_output_param_offset[slot];
+   uint64_t mask = ctx->vs_output.mask[slot];
+   if (!is_pos && !mask)
+      return;
+   if (!is_pos && offset == AC_EXP_PARAM_UNDEFINED)
+      return;
+   std::unique_ptr<Export_instruction> exp{create_instruction<Export_instruction>(aco_opcode::exp, Format::EXP, 4, 0)};
+   exp->enabled_mask = mask;
+   for (unsigned i = 0; i < 4; ++i) {
+      if (mask & (1 << i))
+         exp->getOperand(i) = Operand(ctx->vs_output.outputs[slot][i]);
+      else
+         exp->getOperand(i) = Operand();
+   }
+   exp->valid_mask = false;
+   exp->done = false;
+   exp->compressed = false;
+   if (is_pos)
+      exp->dest = V_008DFC_SQ_EXP_POS + (*next_pos)++;
+   else
+      exp->dest = V_008DFC_SQ_EXP_PARAM + offset;
+   ctx->block->instructions.emplace_back(std::move(exp));
+}
+
+static void export_vs_psiz_layer_viewport(isel_context *ctx, int *next_pos)
+{
+   std::unique_ptr<Export_instruction> exp{create_instruction<Export_instruction>(aco_opcode::exp, Format::EXP, 4, 0)};
+   exp->enabled_mask = 0;
+   for (unsigned i = 0; i < 4; ++i)
+      exp->getOperand(i) = Operand();
+   if (ctx->vs_output.mask[VARYING_SLOT_PSIZ]) {
+      exp->getOperand(0) = Operand(ctx->vs_output.outputs[VARYING_SLOT_PSIZ][0]);
+      exp->enabled_mask |= 0x1;
+   }
+   if (ctx->vs_output.mask[VARYING_SLOT_LAYER]) {
+      exp->getOperand(2) = Operand(ctx->vs_output.outputs[VARYING_SLOT_LAYER][0]);
+      exp->enabled_mask |= 0x4;
+   }
+   if (ctx->vs_output.mask[VARYING_SLOT_VIEWPORT]) {
+      if (ctx->options->chip_class < GFX9) {
+         exp->getOperand(3) = Operand(ctx->vs_output.outputs[VARYING_SLOT_VIEWPORT][0]);
+         exp->enabled_mask |= 0x8;
+      } else {
+         Temp viewport{ctx->program->allocateId(), v1};
+         std::unique_ptr<VOP2_instruction> instr{create_instruction<VOP2_instruction>(aco_opcode::v_lshlrev_b32, Format::VOP2, 2, 1)};
+         instr->getOperand(0) = Operand((uint32_t) 16);
+         instr->getOperand(1) = Operand(ctx->vs_output.outputs[VARYING_SLOT_VIEWPORT][0]);
+         instr->getDefinition(0) = Definition(viewport);
+         ctx->block->instructions.emplace_back(std::move(instr));
+
+         Temp out = viewport;
+         if (exp->getOperand(2).isTemp()) {
+            out = Temp{ctx->program->allocateId(), v1};
+            instr.reset(create_instruction<VOP2_instruction>(aco_opcode::v_or_b32, Format::VOP2, 2, 1));
+            instr->getOperand(0) = Operand(viewport);
+            instr->getOperand(1) = exp->getOperand(2);
+            instr->getDefinition(0) = Definition(out);
+            ctx->block->instructions.emplace_back(std::move(instr));
+         }
+         exp->getOperand(2) = Operand(out);
+         exp->enabled_mask |= 0x4;
+      }
+   }
+   exp->valid_mask = false;
+   exp->done = false;
+   exp->compressed = false;
+   exp->dest = V_008DFC_SQ_EXP_POS + (*next_pos)++;
+   ctx->block->instructions.emplace_back(std::move(exp));
+}
+
+static void create_vs_exports(isel_context *ctx)
+{
+   // there is more to this with primitive id, but that's only for geometry
+   // shaders and they are not supported yet
+   ctx->program->info->vs.vgpr_comp_cnt = ctx->needs_instance_id ? 1 : 0;
+
+   radv_vs_output_info *outinfo = &ctx->program->info->vs.outinfo;
+
+   if (ctx->options->key.vs.export_prim_id) {
+      assert(ctx->program->info->vs.as_ls);
+      ctx->vs_output.mask[VARYING_SLOT_PRIMITIVE_ID] |= 0x1;
+      ctx->vs_output.outputs[VARYING_SLOT_PRIMITIVE_ID][0] = ctx->vs_prim_id;
+   }
+
+   if (ctx->options->key.has_multiview_view_index) {
+      ctx->vs_output.mask[VARYING_SLOT_LAYER] |= 0x1;
+      ctx->vs_output.outputs[VARYING_SLOT_LAYER][0] = as_vgpr(ctx, ctx->view_index);
+   }
+
+   // the order these position exports are created is important
+   int next_pos = 0;
+   export_vs_varying(ctx, VARYING_SLOT_POS, true, &next_pos);
+   if (outinfo->writes_pointsize || outinfo->writes_layer || outinfo->writes_viewport_index) {
+      export_vs_psiz_layer_viewport(ctx, &next_pos);
+   }
+   if (ctx->num_clip_distances + ctx->num_cull_distances > 0)
+      export_vs_varying(ctx, VARYING_SLOT_CLIP_DIST0, true, &next_pos);
+   if (ctx->num_clip_distances + ctx->num_cull_distances > 4)
+      export_vs_varying(ctx, VARYING_SLOT_CLIP_DIST1, true, &next_pos);
+
+   for (unsigned i = 0; i <= VARYING_SLOT_VAR31; ++i) {
+      if (i < VARYING_SLOT_VAR0 && i != VARYING_SLOT_LAYER &&
+          i != VARYING_SLOT_PRIMITIVE_ID)
+         continue;
+
+      export_vs_varying(ctx, i, false, NULL);
+      continue;
    }
 }
 } /* end namespace */
@@ -4314,6 +4578,9 @@ std::unique_ptr<Program> select_program(struct nir_shader *nir,
 
    struct nir_function *func = (struct nir_function *)exec_list_get_head(&nir->functions);
    visit_cf_list(&ctx, &func->impl->body);
+
+   if (ctx.stage == MESA_SHADER_VERTEX)
+      create_vs_exports(&ctx);
 
    append_logical_end(ctx.block);
    ctx.block->instructions.push_back(std::unique_ptr<SOPP_instruction>(create_instruction<SOPP_instruction>(aco_opcode::s_endpgm, Format::SOPP, 0, 0)));
