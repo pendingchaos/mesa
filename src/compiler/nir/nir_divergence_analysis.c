@@ -138,6 +138,9 @@ visit_intrinsic(bool *divergent, nir_intrinsic_instr *instr)
    case nir_intrinsic_load_work_group_id:
    case nir_intrinsic_load_num_work_groups:
    case nir_intrinsic_get_buffer_size:
+   case nir_intrinsic_load_view_index:
+   case nir_intrinsic_load_base_instance:
+   case nir_intrinsic_load_first_vertex:
       is_divergent = false;
       break;
 
@@ -177,6 +180,9 @@ visit_intrinsic(bool *divergent, nir_intrinsic_instr *instr)
    case nir_intrinsic_load_barycentric_centroid:
    case nir_intrinsic_load_invocation_id:
    case nir_intrinsic_load_local_invocation_index:
+   case nir_intrinsic_load_vertex_id_zero_base:
+   case nir_intrinsic_load_vertex_id:
+   case nir_intrinsic_load_instance_id:
    case nir_intrinsic_ssbo_atomic_add:
    case nir_intrinsic_ssbo_atomic_imin:
    case nir_intrinsic_ssbo_atomic_umin:
