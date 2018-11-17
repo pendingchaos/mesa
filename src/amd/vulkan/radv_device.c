@@ -603,6 +603,28 @@ void radv_DestroyInstance(
 	vk_free(&instance->alloc, instance);
 }
 
+static int
+radv_get_int_debug_option(const char *name, int default_value)
+{
+	const char *str;
+	int result;
+
+	str = getenv(name);
+	if (!str) {
+		result = default_value;
+	} else {
+		char *endptr;
+
+		result = strtol(str, &endptr, 0);
+		if (str == endptr) {
+			/* No digits founs. */
+			result = default_value;
+		}
+	}
+
+	return result;
+}
+
 static VkResult
 radv_enumerate_devices(struct radv_instance *instance)
 {
@@ -621,7 +643,12 @@ radv_enumerate_devices(struct radv_instance *instance)
 	if (max_devices < 1)
 		return vk_error(instance, VK_ERROR_INCOMPATIBLE_DRIVER);
 
+	int force_device = radv_get_int_debug_option("RADV_FORCE_DEVICE", -1);
+
 	for (unsigned i = 0; i < (unsigned)max_devices; i++) {
+		if (force_device >= 0 && i != force_device)
+			continue;
+
 		if (devices[i]->available_nodes & 1 << DRM_NODE_RENDER &&
 		    devices[i]->bustype == DRM_BUS_PCI &&
 		    devices[i]->deviceinfo.pci->vendor_id == ATI_VENDOR_ID) {
@@ -1519,28 +1546,6 @@ static int radv_get_device_extension_index(const char *name)
 			return i;
 	}
 	return -1;
-}
-
-static int
-radv_get_int_debug_option(const char *name, int default_value)
-{
-	const char *str;
-	int result;
-
-	str = getenv(name);
-	if (!str) {
-		result = default_value;
-	} else {
-		char *endptr;
-
-		result = strtol(str, &endptr, 0);
-		if (str == endptr) {
-			/* No digits founs. */
-			result = default_value;
-		}
-	}
-
-	return result;
 }
 
 VkResult radv_CreateDevice(
