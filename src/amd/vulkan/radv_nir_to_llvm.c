@@ -553,6 +553,7 @@ set_loc(struct radv_userdata_info *ud_info, uint8_t *sgpr_idx,
 	ud_info->num_sgprs = num_sgprs;
 	ud_info->indirect = indirect;
 	*sgpr_idx += num_sgprs;
+	assert(*sgpr_idx <= 32);
 }
 
 static void
@@ -624,9 +625,12 @@ count_vs_user_sgprs(struct radv_shader_context *ctx)
 {
 	uint8_t count = 0;
 
-	if (ctx->shader_info->info.vs.has_vertex_buffers)
+	if (ctx->shader_info->info.vs.has_vertex_buffers) {
 		count += HAVE_32BIT_POINTERS ? 1 : 2;
+		printf("allocate_user_sgprs: vertex buffers!\n");
+	}
 	count += ctx->shader_info->info.vs.needs_draw_id ? 3 : 2;
+	printf("allocate_user_sgprs: %s!\n", ctx->shader_info->info.vs.needs_draw_id ? "draw id and two unknowns" : "two unknowns");
 
 	return count;
 }
@@ -657,6 +661,7 @@ static void allocate_user_sgprs(struct radv_shader_context *ctx,
 	/* 2 user sgprs will nearly always be allocated for scratch/rings */
 	if (ctx->options->supports_spill || user_sgpr_info->need_ring_offsets) {
 		user_sgpr_count += 2;
+		printf("allocate_user_sgprs: ring thing!\n");
 	}
 
 	switch (stage) {
@@ -670,7 +675,6 @@ static void allocate_user_sgprs(struct radv_shader_context *ctx,
 	case MESA_SHADER_VERTEX:
 		if (!ctx->is_gs_copy_shader)
 			user_sgpr_count += count_vs_user_sgprs(ctx);
-		user_sgpr_count += ctx->options->key.vs.attrib_count * 2;
 		//TODO(pendingchaos): figure out interaction with tesselation/geometry shaders
 		break;
 	case MESA_SHADER_TESS_CTRL:
@@ -692,37 +696,62 @@ static void allocate_user_sgprs(struct radv_shader_context *ctx,
 		break;
 	}
 
-	if (needs_view_index)
+	if (needs_view_index) {
+	    printf("allocate_user_sgprs: view index!\n");
 		user_sgpr_count++;
+	}
 
-	if (ctx->shader_info->info.loads_push_constants)
+    //if (ctx->shader_info->info.so.num_outputs)
+    //    user_sgpr_count += HAVE_32BIT_POINTERS ? 1 : 2;
+
+	if (ctx->shader_info->info.loads_push_constants) {
+	    printf("allocate_user_sgprs: push constants!\n");
 		user_sgpr_count += HAVE_32BIT_POINTERS ? 1 : 2;
+	}
 
 	uint32_t available_sgprs = ctx->options->chip_class >= GFX9 && stage != MESA_SHADER_COMPUTE ? 32 : 16;
 	uint32_t remaining_sgprs = available_sgprs - user_sgpr_count;
 
     //TODO(pendingchaos): fix tabs-vs-spaces everywhere
     //TODO(pendingchaos): partial indirect vertex buffers/descriptor sets
-    uint32_t num_vs_attribs = ctx->options->key.vs.attrib_count;
-    ctx->shader_info->need_indirect_vertex_buffer_addrs = true;
-    printf("COUNT: %u, REMAINING: %u\n", num_vs_attribs, remaining_sgprs);
-    if (stage == MESA_SHADER_VERTEX && remaining_sgprs / 2 >= num_vs_attribs) {
-        user_sgpr_count += num_vs_attribs * 2;
-        remaining_sgprs -= num_vs_attribs * 2;
-        ctx->shader_info->need_indirect_vertex_buffer_addrs = false;
+    if (stage == MESA_SHADER_VERTEX) {
+        uint32_t num_vs_attribs = ctx->options->key.vs.attrib_count;
+        // "remaining_sgprs / 2 - 1" instead of "remaining_sgprs / 2" to leave space for descriptor set stuff
+        //TODO(pendingchaos): do "(remaining_sgprs - 1) / 2" instead
+        ctx->shader_info->direct_vertex_buffer_addrs = MIN2(remaining_sgprs / 2 - 1, num_vs_attribs);
+        printf("DIRECT COUNT BEFORE: %u\n", ctx->shader_info->direct_vertex_buffer_addrs);
+        //ctx->shader_info->direct_vertex_buffer_addrs = MIN2(ctx->shader_info->direct_vertex_buffer_addrs, 12); //TODO(pendingchaos): this hack fixes thrones of britannia
+        printf("COUNT: %u, REMAINING: %u, DIRECT_COUNT: %u\n", num_vs_attribs, remaining_sgprs, ctx->shader_info->direct_vertex_buffer_addrs);
+        printf("allocate_user_sgprs: direct vertex buffers!\n");
+        user_sgpr_count += ctx->shader_info->direct_vertex_buffer_addrs * 2;
+        remaining_sgprs -= ctx->shader_info->direct_vertex_buffer_addrs * 2;
     }
+
+    assert(user_sgpr_count <= available_sgprs);
+    assert(remaining_sgprs == available_sgprs - user_sgpr_count);
 
 	uint32_t num_desc_set =
 		util_bitcount(ctx->shader_info->info.desc_set_used_mask);
 	if (remaining_sgprs / (HAVE_32BIT_POINTERS ? 1 : 2) < num_desc_set) {
 		user_sgpr_info->indirect_all_descriptor_sets = true;
+		remaining_sgprs -= (HAVE_32BIT_POINTERS ? 1 : 2);
+		user_sgpr_count += (HAVE_32BIT_POINTERS ? 1 : 2);
+	} else {
         remaining_sgprs -= num_desc_set * (HAVE_32BIT_POINTERS ? 1 : 2);
-	}
+        user_sgpr_count += num_desc_set * (HAVE_32BIT_POINTERS ? 1 : 2);
+        printf("allocate_user_sgprs: direct descriptor sets!\n");
+    }
+
+    assert(user_sgpr_count <= available_sgprs);
+    assert(remaining_sgprs == available_sgprs - user_sgpr_count);
 
 	ctx->shader_info->info.fast_push_constants_size =
-	//0;
+	//0; //TODO(pendingchaos): hack
 	    MIN2(ctx->shader_info->info.fast_push_constants_size, remaining_sgprs);
 	ctx->abi.fast_push_constants_size = ctx->shader_info->info.fast_push_constants_size;
+
+	remaining_sgprs -= ctx->abi.fast_push_constants_size;
+	user_sgpr_count += ctx->abi.fast_push_constants_size;
 }
 
 static void
@@ -792,12 +821,10 @@ declare_vs_specific_input_sgprs(struct radv_shader_context *ctx,
 			add_arg(args, ARG_SGPR, ctx->ac.i32, &ctx->abi.draw_id);
 		}
 
-		if (!ctx->shader_info->need_indirect_vertex_buffer_addrs) {
-		    for (int loc = 0; loc < ctx->options->key.vs.attrib_count; loc++) {
-			    add_arg(args, ARG_SGPR, ctx->ac.i32, &ctx->vertex_buffer_addrs[loc][0]);
-			    add_arg(args, ARG_SGPR, ctx->ac.i32, &ctx->vertex_buffer_addrs[loc][1]);
-		    }
-		}
+	    for (int loc = 0; loc < ctx->shader_info->direct_vertex_buffer_addrs; loc++) {
+		    add_arg(args, ARG_SGPR, ctx->ac.i32, &ctx->vertex_buffer_addrs[loc][0]);
+		    add_arg(args, ARG_SGPR, ctx->ac.i32, &ctx->vertex_buffer_addrs[loc][1]);
+	    }
 	}
 }
 
@@ -877,6 +904,7 @@ set_global_input_locs(struct radv_shader_context *ctx, gl_shader_stage stage,
 			} else
 				ctx->descriptor_sets[i] = NULL;
 		}
+		printf("set_loc_shader: direct descriptor sets!\n");
 	} else {
 		set_loc_shader_ptr(ctx, AC_UD_INDIRECT_DESCRIPTOR_SETS,
 			           user_sgpr_idx);
@@ -893,10 +921,12 @@ set_global_input_locs(struct radv_shader_context *ctx, gl_shader_stage stage,
 				ctx->descriptor_sets[i] = NULL;
 		}
 		ctx->shader_info->need_indirect_descriptor_sets = true;
+		printf("set_loc_shader: indirect descriptor sets!\n");
 	}
 
 	if (ctx->shader_info->info.loads_push_constants) {
 		set_loc_shader_ptr(ctx, AC_UD_PUSH_CONSTANTS, user_sgpr_idx);
+		printf("set_loc_shader: push constants!\n");
 	}
 
     //TODO: there are multiple args (one for each word) above? this is also doen for vertex buffer addresses and works?
@@ -905,6 +935,7 @@ set_global_input_locs(struct radv_shader_context *ctx, gl_shader_stage stage,
 	if (ctx->streamout_buffers) {
 		set_loc_shader_ptr(ctx, AC_UD_STREAMOUT_BUFFERS,
 			       user_sgpr_idx);
+		printf("set_loc_shader: streamout!\n");
 	}
 }
 
@@ -920,21 +951,23 @@ set_vs_specific_input_locs(struct radv_shader_context *ctx,
 		if (ctx->shader_info->info.vs.has_vertex_buffers) {
 			set_loc_shader_ptr(ctx, AC_UD_VS_VERTEX_BUFFERS,
 					   user_sgpr_idx);
+			printf("set_loc_shader: vertex buffers!\n");
 		}
 
 		unsigned vs_num = 2;
-		if (ctx->shader_info->info.vs.needs_draw_id)
+		if (ctx->shader_info->info.vs.needs_draw_id) {
 			vs_num++;
+			printf("set_loc_shader: draw id!\n");
+		}
+		printf("set_loc_shader: two unknown things!\n");
 
 		set_loc_shader(ctx, AC_UD_VS_BASE_VERTEX_START_INSTANCE,
 			       user_sgpr_idx, vs_num);
 
-		//TODO(pendingchaos): 32-bit pointers?
-		if (!ctx->shader_info->need_indirect_vertex_buffer_addrs) {
-		    printf("sgpr(set_loc_shader): %d\n", *user_sgpr_idx);
-		    printf("    attrib_count: %d\n", ctx->options->key.vs.attrib_count);
-		    set_loc_shader(ctx, AC_UD_VS_VERTEX_BUFFER_ADDRS, user_sgpr_idx, ctx->options->key.vs.attrib_count * 2);
-		}
+		printf("sgpr(set_loc_shader): %d\n", *user_sgpr_idx);
+		printf("    attrib_count: %d\n", ctx->options->key.vs.attrib_count);
+		set_loc_shader(ctx, AC_UD_VS_VERTEX_BUFFER_ADDRS, user_sgpr_idx, ctx->shader_info->direct_vertex_buffer_addrs * 2);
+		printf("set_loc_shader: direct vertex buffers!\n");
 	}
 }
 
@@ -1255,8 +1288,10 @@ static void create_function(struct radv_shader_context *ctx,
 	case MESA_SHADER_VERTEX:
 		set_vs_specific_input_locs(ctx, stage, has_previous_stage,
 					   previous_stage, &user_sgpr_idx);
-		if (ctx->abi.view_index)
+		if (ctx->abi.view_index) {
 			set_loc_shader(ctx, AC_UD_VIEW_INDEX, &user_sgpr_idx, 1);
+			printf("set_loc_shader: view index!\n");
+		}
 		break;
 	case MESA_SHADER_TESS_CTRL:
 		set_vs_specific_input_locs(ctx, stage, has_previous_stage,
@@ -2092,7 +2127,7 @@ handle_vs_input_decl(struct radv_shader_context *ctx,
 			buffer_index = LLVMBuildAdd(ctx->ac.builder, ctx->abi.vertex_id,
 			                            ctx->abi.base_vertex, "");
 
-        if (ctx->shader_info->need_indirect_vertex_buffer_addrs) {
+        if (attrib_index >= ctx->shader_info->direct_vertex_buffer_addrs) {
     		LLVMValueRef t_offset = LLVMConstInt(ctx->ac.i32, attrib_index, false);
 		    t_list = ac_build_load_to_sgpr(&ctx->ac, t_list_ptr, t_offset);
 		} else {

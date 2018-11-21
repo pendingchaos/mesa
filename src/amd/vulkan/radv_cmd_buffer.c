@@ -1922,7 +1922,33 @@ radv_flush_vertex_descriptors(struct radv_cmd_buffer *cmd_buffer,
 		uint32_t count = velems->count;
 		uint64_t va;
 
-        if (cmd_buffer->state.pipeline->shaders[MESA_SHADER_VERTEX]->info.need_indirect_vertex_buffer_addrs) {
+	    struct radv_userdata_info *loc = radv_lookup_user_sgpr(cmd_buffer->state.pipeline, MESA_SHADER_VERTEX, AC_UD_VS_VERTEX_BUFFER_ADDRS);
+	    uint32_t base_reg = cmd_buffer->state.pipeline->user_data_0[MESA_SHADER_VERTEX];
+	    if (loc->sgpr_idx == -1)
+		    return;
+	    //printf("sgpr: %d\n", loc->sgpr_idx);
+	    unsigned sh_offset = base_reg + loc->sgpr_idx * 4;
+
+        unsigned direct_count = cmd_buffer->state.pipeline->shaders[MESA_SHADER_VERTEX]->info.direct_vertex_buffer_addrs;
+
+        assert(count >= direct_count);
+
+		radeon_emit(cmd_buffer->cs, PKT3(PKT3_SET_SH_REG, direct_count * 2, 0));
+		radeon_emit(cmd_buffer->cs, (sh_offset - SI_SH_REG_OFFSET) >> 2);
+		//TODO(pendingchaos): this and the old code doesn't deal with holes?
+        for (i = 0; i < direct_count; i++) {
+		    int vb = velems->binding[i];
+		    struct radv_buffer *buffer = cmd_buffer->vertex_bindings[vb].buffer;
+		    va = radv_buffer_get_va(buffer->bo);
+		    uint32_t offset = cmd_buffer->vertex_bindings[vb].offset + velems->offset[i];
+		    va += offset + buffer->offset;
+		    uint32_t stride = cmd_buffer->state.pipeline->binding_stride[vb];
+		    //printf("    [%d]: va: 0x%.8lx, desc: [0x%.4x, 0x%.4x, ??, ??]\n", i, va, va, S_008F04_BASE_ADDRESS_HI(va >> 32) | S_008F04_STRIDE(stride));
+		    radeon_emit(cmd_buffer->cs, va);
+		    radeon_emit(cmd_buffer->cs, S_008F04_BASE_ADDRESS_HI(va >> 32) | S_008F04_STRIDE(stride));
+		}
+
+        if (i < count) {
 		    /* allocate some descriptor state for vertex buffers */
 		    if (!radv_cmd_buffer_upload_alloc(cmd_buffer, count * 16, 256,
 						      &vb_offset, &vb_ptr))
@@ -1958,29 +1984,7 @@ radv_flush_vertex_descriptors(struct radv_cmd_buffer *cmd_buffer,
 		    cmd_buffer->state.vb_va = va;
 		    cmd_buffer->state.vb_size = count * 16;
 		    cmd_buffer->state.prefetch_L2_mask |= RADV_PREFETCH_VBO_DESCRIPTORS;
-        } else {
-		    struct radv_userdata_info *loc = radv_lookup_user_sgpr(cmd_buffer->state.pipeline, MESA_SHADER_VERTEX, AC_UD_VS_VERTEX_BUFFER_ADDRS);
-		    uint32_t base_reg = cmd_buffer->state.pipeline->user_data_0[MESA_SHADER_VERTEX];
-		    if (loc->sgpr_idx == -1)
-			    return;
-		    //printf("sgpr: %d\n", loc->sgpr_idx);
-		    unsigned sh_offset = base_reg + loc->sgpr_idx * 4;
-
-		    radeon_emit(cmd_buffer->cs, PKT3(PKT3_SET_SH_REG, count * 2, 0));
-		    radeon_emit(cmd_buffer->cs, (sh_offset - SI_SH_REG_OFFSET) >> 2);
-		    //TODO(pendingchaos): this and the old code doesn't deal with holes?
-		    for (i = 0; i < count; i++) {
-			    int vb = velems->binding[i];
-			    struct radv_buffer *buffer = cmd_buffer->vertex_bindings[vb].buffer;
-			    va = radv_buffer_get_va(buffer->bo);
-			    uint32_t offset = cmd_buffer->vertex_bindings[vb].offset + velems->offset[i];
-			    va += offset + buffer->offset;
-			    uint32_t stride = cmd_buffer->state.pipeline->binding_stride[vb];
-			    //printf("    [%d]: va: 0x%.8lx, desc: [0x%.4x, 0x%.4x, ??, ??]\n", i, va, va, S_008F04_BASE_ADDRESS_HI(va >> 32) | S_008F04_STRIDE(stride));
-			    radeon_emit(cmd_buffer->cs, va);
-			    radeon_emit(cmd_buffer->cs, S_008F04_BASE_ADDRESS_HI(va >> 32) | S_008F04_STRIDE(stride));
-		    }
-		}
+        }
 	}
 	cmd_buffer->state.dirty &= ~RADV_CMD_DIRTY_VERTEX_BUFFER;
 }
