@@ -1392,6 +1392,14 @@ static LLVMValueRef visit_load_push_constant(struct ac_nir_context *ctx,
 	addr = LLVMBuildAdd(ctx->ac.builder, addr,
 			    get_src(ctx, instr->src[0]), "");
 
+	if (LLVMIsAConstantInt(addr) && instr->dest.ssa.bit_size == 32) {
+	    unsigned long long off = LLVMConstIntGetZExtValue(addr);
+	    int size = instr->dest.ssa.num_components;
+	    if (off % 4 == 0 && off / 4 + size <= ctx->abi->fast_push_constants_size) {
+	        return ac_build_gather_values(&ctx->ac, ctx->abi->fast_push_constants + off / 4, size);
+	    }
+	}
+
 	ptr = ac_build_gep0(&ctx->ac, ctx->abi->push_constants, addr);
 
 	if (instr->dest.ssa.bit_size == 16) {

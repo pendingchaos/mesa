@@ -98,6 +98,7 @@ entry_size(struct cache_entry *entry)
 	return ret;
 }
 
+//TODO(pendingchaos): new VS stuff
 void
 radv_hash_shaders(unsigned char *hash,
 		  const VkPipelineShaderStageCreateInfo **stages,

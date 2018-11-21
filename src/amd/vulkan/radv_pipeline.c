@@ -1881,6 +1881,7 @@ radv_generate_graphics_pipeline_key(struct radv_pipeline *pipeline,
 		}
 	}
 
+	key.attrib_count = 0;
 	for (unsigned i = 0; i < input_state->vertexAttributeDescriptionCount; ++i) {
 		unsigned location = input_state->pVertexAttributeDescriptions[i].location;
 		unsigned binding = input_state->pVertexAttributeDescriptions[i].binding;
@@ -1888,6 +1889,20 @@ radv_generate_graphics_pipeline_key(struct radv_pipeline *pipeline,
 			key.instance_rate_inputs |= 1u << location;
 			key.instance_rate_divisors[location] = instance_rate_divisors[binding];
 		}
+
+		const struct vk_format_description *format_desc = vk_format_description(input_state->pVertexAttributeDescriptions[i].format);
+		int first_non_void = vk_format_get_first_non_void_channel(input_state->pVertexAttributeDescriptions[i].format);
+		uint32_t num_format = radv_translate_buffer_numformat(format_desc, first_non_void);
+		uint32_t data_format = radv_translate_buffer_dataformat(format_desc, first_non_void);
+
+		key.rsrc_word3[location] = S_008F0C_DST_SEL_X(si_map_swizzle(format_desc->swizzle[0])) |
+			S_008F0C_DST_SEL_Y(si_map_swizzle(format_desc->swizzle[1])) |
+			S_008F0C_DST_SEL_Z(si_map_swizzle(format_desc->swizzle[2])) |
+			S_008F0C_DST_SEL_W(si_map_swizzle(format_desc->swizzle[3])) |
+			S_008F0C_NUM_FORMAT(num_format) |
+			S_008F0C_DATA_FORMAT(data_format);
+		key.attribs[location] = true;
+		key.attrib_count = MAX2(key.attrib_count, location + 1);
 
 		if (pipeline->device->physical_device->rad_info.chip_class <= VI &&
 		    pipeline->device->physical_device->rad_info.family != CHIP_STONEY) {
@@ -1940,8 +1955,12 @@ radv_fill_shader_keys(struct radv_shader_variant_key *keys,
 {
 	keys[MESA_SHADER_VERTEX].vs.instance_rate_inputs = key->instance_rate_inputs;
 	keys[MESA_SHADER_VERTEX].vs.alpha_adjust = key->vertex_alpha_adjust;
-	for (unsigned i = 0; i < MAX_VERTEX_ATTRIBS; ++i)
+	for (unsigned i = 0; i < MAX_VERTEX_ATTRIBS; ++i) {
 		keys[MESA_SHADER_VERTEX].vs.instance_rate_divisors[i] = key->instance_rate_divisors[i];
+		keys[MESA_SHADER_VERTEX].vs.rsrc_word3[i] = key->rsrc_word3[i];
+		keys[MESA_SHADER_VERTEX].vs.attribs[i] = key->attribs[i];
+	}
+	keys[MESA_SHADER_VERTEX].vs.attrib_count = key->attrib_count;
 
 	if (nir[MESA_SHADER_TESS_CTRL]) {
 		keys[MESA_SHADER_VERTEX].vs.as_ls = true;

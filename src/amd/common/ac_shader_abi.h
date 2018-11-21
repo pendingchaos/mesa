@@ -66,6 +66,8 @@ struct ac_shader_abi {
 
 	/* Vulkan only */
 	LLVMValueRef push_constants;
+	int fast_push_constants_size;
+	LLVMValueRef fast_push_constants[32];
 	LLVMValueRef view_index;
 
 	LLVMValueRef outputs[AC_LLVM_MAX_OUTPUTS * 4];

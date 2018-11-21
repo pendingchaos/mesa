@@ -242,9 +242,18 @@ gather_intrinsic_info(const nir_shader *nir, const nir_intrinsic_instr *instr,
 	case nir_intrinsic_load_primitive_id:
 		info->uses_prim_id = true;
 		break;
-	case nir_intrinsic_load_push_constant:
+	case nir_intrinsic_load_push_constant: {
 		info->loads_push_constants = true;
+        nir_const_value *off_const = nir_src_as_const_value(instr->src[0]);
+		if (off_const && instr->dest.ssa.bit_size == 32) {
+		    unsigned off = off_const->u32[0] + nir_intrinsic_base(instr);
+		    if (off % 4 == 0) {
+		        unsigned end = off / 4 + instr->dest.ssa.num_components;
+		        info->fast_push_constants_size = MAX2(info->fast_push_constants_size, end);
+		    }
+		}
 		break;
+	}
 	case nir_intrinsic_vulkan_resource_index:
 		info->desc_set_used_mask |= (1 << nir_intrinsic_desc_set(instr));
 		break;

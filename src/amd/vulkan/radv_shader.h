@@ -65,6 +65,9 @@ enum {
 struct radv_vs_variant_key {
 	uint32_t instance_rate_inputs;
 	uint32_t instance_rate_divisors[MAX_VERTEX_ATTRIBS];
+	uint32_t rsrc_word3[MAX_VERTEX_ATTRIBS];
+	bool attribs[MAX_VERTEX_ATTRIBS];
+	uint32_t attrib_count;
 
 	/* For 2_10_10_10 formats the alpha is handled as unsigned by pre-vega HW.
 	 * so we may need to fix it up. */
@@ -132,8 +135,10 @@ enum radv_ud_index {
 	AC_UD_INDIRECT_DESCRIPTOR_SETS = 2,
 	AC_UD_VIEW_INDEX = 3,
 	AC_UD_STREAMOUT_BUFFERS = 4,
-	AC_UD_SHADER_START = 5,
+	AC_UD_FAST_PUSH_CONSTANTS = 5,
+	AC_UD_SHADER_START = 6,
 	AC_UD_VS_VERTEX_BUFFERS = AC_UD_SHADER_START,
+	AC_UD_VS_VERTEX_BUFFER_ADDRS,
 	AC_UD_VS_BASE_VERTEX_START_INSTANCE,
 	AC_UD_VS_MAX_UD,
 	AC_UD_PS_MAX_UD,
@@ -162,6 +167,7 @@ struct radv_streamout_info {
 
 struct radv_shader_info {
 	bool loads_push_constants;
+	uint32_t fast_push_constants_size;
 	uint32_t desc_set_used_mask;
 	bool needs_multiview_view_index;
 	bool uses_invocation_id;
@@ -246,6 +252,7 @@ struct radv_shader_variant_info {
 	unsigned num_input_vgprs;
 	unsigned private_mem_vgprs;
 	bool need_indirect_descriptor_sets;
+	bool need_indirect_vertex_buffer_addrs;
 	struct {
 		struct {
 			struct radv_vs_output_info outinfo;
