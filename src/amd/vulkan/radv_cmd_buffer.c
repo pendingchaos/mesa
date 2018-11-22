@@ -1880,12 +1880,12 @@ radv_flush_constants(struct radv_cmd_buffer *cmd_buffer,
 	cmd_buffer->push_constant_stages &= ~stages;
 	assert(cmd_buffer->cs->cdw <= cdw_max);
 
-    //TODO(pendingchaos): "merged stages"?
-    //TODO(pendingchaos): why is there as radv_get_shader() helper?
+	//TODO(pendingchaos): "merged stages"?
+	//TODO(pendingchaos): why is there as radv_get_shader() helper?
 	radv_foreach_stage(stage, stages) {
 		shader = radv_get_shader(pipeline, stage);
 		if (!shader)
-		    continue;
+			continue;
 
 		struct radv_userdata_info *loc = radv_lookup_user_sgpr(pipeline, stage, AC_UD_FAST_PUSH_CONSTANTS);
 		uint32_t base_reg = pipeline->user_data_0[stage];
@@ -1893,17 +1893,9 @@ radv_flush_constants(struct radv_cmd_buffer *cmd_buffer,
 			return;
 		unsigned sh_offset = base_reg + loc->sgpr_idx * 4;
 
-        #if 0
-        for (unsigned i = 0; i < shader->info.info.fast_push_constants_size; i++) {
-		    radeon_emit(cmd_buffer->cs, PKT3(PKT3_SET_SH_REG, 1, 0));
-		    radeon_emit(cmd_buffer->cs, (sh_offset + i * 4 - SI_SH_REG_OFFSET) >> 2);
-		    radeon_emit(cmd_buffer->cs, ((uint32_t*)cmd_buffer->push_constants)[i]);
-		}
-        #else
 		radeon_emit(cmd_buffer->cs, PKT3(PKT3_SET_SH_REG, shader->info.info.fast_push_constants_size, 0));
 		radeon_emit(cmd_buffer->cs, (sh_offset - SI_SH_REG_OFFSET) >> 2);
 		radeon_emit_array(cmd_buffer->cs, cmd_buffer->push_constants, shader->info.info.fast_push_constants_size);
-		#endif
 	}
 }
 
@@ -1922,69 +1914,67 @@ radv_flush_vertex_descriptors(struct radv_cmd_buffer *cmd_buffer,
 		uint32_t count = velems->count;
 		uint64_t va;
 
-	    struct radv_userdata_info *loc = radv_lookup_user_sgpr(cmd_buffer->state.pipeline, MESA_SHADER_VERTEX, AC_UD_VS_VERTEX_BUFFER_ADDRS);
-	    uint32_t base_reg = cmd_buffer->state.pipeline->user_data_0[MESA_SHADER_VERTEX];
-	    if (loc->sgpr_idx == -1)
-		    return;
-	    //printf("sgpr: %d\n", loc->sgpr_idx);
-	    unsigned sh_offset = base_reg + loc->sgpr_idx * 4;
+		struct radv_userdata_info *loc = radv_lookup_user_sgpr(cmd_buffer->state.pipeline, MESA_SHADER_VERTEX, AC_UD_VS_VERTEX_BUFFER_ADDRS);
+		uint32_t base_reg = cmd_buffer->state.pipeline->user_data_0[MESA_SHADER_VERTEX];
+		if (loc->sgpr_idx == -1)
+			return;
+		//printf("sgpr: %d\n", loc->sgpr_idx);
+		unsigned sh_offset = base_reg + loc->sgpr_idx * 4;
 
-        unsigned direct_count = cmd_buffer->state.pipeline->shaders[MESA_SHADER_VERTEX]->info.direct_vertex_buffer_addrs;
+		unsigned direct_count = cmd_buffer->state.pipeline->shaders[MESA_SHADER_VERTEX]->info.direct_vertex_buffer_addrs;
 
-        assert(count >= direct_count);
+		assert(count >= direct_count);
 
 		radeon_emit(cmd_buffer->cs, PKT3(PKT3_SET_SH_REG, direct_count * 2, 0));
 		radeon_emit(cmd_buffer->cs, (sh_offset - SI_SH_REG_OFFSET) >> 2);
 		//TODO(pendingchaos): this and the old code doesn't deal with holes?
-        for (i = 0; i < direct_count; i++) {
-		    int vb = velems->binding[i];
-		    struct radv_buffer *buffer = cmd_buffer->vertex_bindings[vb].buffer;
-		    va = radv_buffer_get_va(buffer->bo);
-		    uint32_t offset = cmd_buffer->vertex_bindings[vb].offset + velems->offset[i];
-		    va += offset + buffer->offset;
-		    uint32_t stride = cmd_buffer->state.pipeline->binding_stride[vb];
-		    //printf("    [%d]: va: 0x%.8lx, desc: [0x%.4x, 0x%.4x, ??, ??]\n", i, va, va, S_008F04_BASE_ADDRESS_HI(va >> 32) | S_008F04_STRIDE(stride));
-		    radeon_emit(cmd_buffer->cs, va);
-		    radeon_emit(cmd_buffer->cs, S_008F04_BASE_ADDRESS_HI(va >> 32) | S_008F04_STRIDE(stride));
+		for (i = 0; i < direct_count; i++) {
+			int vb = velems->binding[i];
+			struct radv_buffer *buffer = cmd_buffer->vertex_bindings[vb].buffer;
+			va = radv_buffer_get_va(buffer->bo);
+			uint32_t offset = cmd_buffer->vertex_bindings[vb].offset + velems->offset[i];
+			va += offset + buffer->offset;
+			uint32_t stride = cmd_buffer->state.pipeline->binding_stride[vb];
+			radeon_emit(cmd_buffer->cs, va);
+			radeon_emit(cmd_buffer->cs, S_008F04_BASE_ADDRESS_HI(va >> 32) | S_008F04_STRIDE(stride));
 		}
 
-        if (i < count) {
-		    /* allocate some descriptor state for vertex buffers */
-		    if (!radv_cmd_buffer_upload_alloc(cmd_buffer, count * 16, 256,
+		if (i < count) {
+			/* allocate some descriptor state for vertex buffers */
+			if (!radv_cmd_buffer_upload_alloc(cmd_buffer, count * 16, 256,
 						      &vb_offset, &vb_ptr))
-			    return;
+				return;
 
-		    for (i = 0; i < count; i++) {
-			    uint32_t *desc = &((uint32_t *)vb_ptr)[i * 4];
-			    uint32_t offset;
-			    int vb = velems->binding[i];
-			    struct radv_buffer *buffer = cmd_buffer->vertex_bindings[vb].buffer;
-			    uint32_t stride = cmd_buffer->state.pipeline->binding_stride[vb];
+			for (i = 0; i < count; i++) {
+				uint32_t *desc = &((uint32_t *)vb_ptr)[i * 4];
+				uint32_t offset;
+				int vb = velems->binding[i];
+				struct radv_buffer *buffer = cmd_buffer->vertex_bindings[vb].buffer;
+				uint32_t stride = cmd_buffer->state.pipeline->binding_stride[vb];
 
-			    va = radv_buffer_get_va(buffer->bo);
+				va = radv_buffer_get_va(buffer->bo);
 
-			    offset = cmd_buffer->vertex_bindings[vb].offset + velems->offset[i];
-			    va += offset + buffer->offset;
-			    desc[0] = va;
-			    desc[1] = S_008F04_BASE_ADDRESS_HI(va >> 32) | S_008F04_STRIDE(stride);
-			    if (cmd_buffer->device->physical_device->rad_info.chip_class <= CIK && stride)
-				    desc[2] = (buffer->size - offset - velems->format_size[i]) / stride + 1;
-			    else
-				    desc[2] = buffer->size - offset;
-			    desc[3] = velems->rsrc_word3[i];
-        		//printf("[%d]: va: 0x%.8lx, desc: [0x%.4x, 0x%.4x, 0x%.4x, 0x%.4x]\n", i, va, desc[0], desc[1], desc[2], desc[3]);
-		    }
+				offset = cmd_buffer->vertex_bindings[vb].offset + velems->offset[i];
+				va += offset + buffer->offset;
+				desc[0] = va;
+				desc[1] = S_008F04_BASE_ADDRESS_HI(va >> 32) | S_008F04_STRIDE(stride);
+				if (cmd_buffer->device->physical_device->rad_info.chip_class <= CIK && stride)
+					desc[2] = (buffer->size - offset - velems->format_size[i]) / stride + 1;
+				else
+					desc[2] = buffer->size - offset;
+				desc[3] = velems->rsrc_word3[i];
+			}
 
-		    va = radv_buffer_get_va(cmd_buffer->upload.upload_bo);
-		    va += vb_offset;
+			va = radv_buffer_get_va(cmd_buffer->upload.upload_bo);
+			va += vb_offset;
 
-		    radv_emit_userdata_address(cmd_buffer, cmd_buffer->state.pipeline, MESA_SHADER_VERTEX,
-					       AC_UD_VS_VERTEX_BUFFERS, va);
+			radv_emit_userdata_address(cmd_buffer, cmd_buffer->state.pipeline, MESA_SHADER_VERTEX,
+						   AC_UD_VS_VERTEX_BUFFERS, va);
 
-		    cmd_buffer->state.vb_va = va;
-		    cmd_buffer->state.vb_size = count * 16;
-		    cmd_buffer->state.prefetch_L2_mask |= RADV_PREFETCH_VBO_DESCRIPTORS;
-        }
+			cmd_buffer->state.vb_va = va;
+			cmd_buffer->state.vb_size = count * 16;
+			cmd_buffer->state.prefetch_L2_mask |= RADV_PREFETCH_VBO_DESCRIPTORS;
+		}
 	}
 	cmd_buffer->state.dirty &= ~RADV_CMD_DIRTY_VERTEX_BUFFER;
 }
