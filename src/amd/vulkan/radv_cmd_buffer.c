@@ -1928,7 +1928,7 @@ radv_flush_vertex_descriptors(struct radv_cmd_buffer *cmd_buffer,
 		//printf("sgpr: %d\n", loc->sgpr_idx);
 		unsigned sh_offset = base_reg + loc->sgpr_idx * 4;
 
-		unsigned direct_count = cmd_buffer->state.pipeline->shaders[MESA_SHADER_VERTEX]->info.direct_vertex_buffer_addrs;
+		unsigned direct_count = radv_get_shader(cmd_buffer->state.pipeline, MESA_SHADER_VERTEX)->info.direct_vertex_buffer_addrs;
 
 		assert(count >= direct_count);
 
