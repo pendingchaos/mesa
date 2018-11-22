@@ -658,6 +658,7 @@ struct radv_device {
 	int queue_count[RADV_MAX_QUEUE_FAMILIES];
 	struct radeon_cmdbuf *empty_cs[RADV_MAX_QUEUE_FAMILIES];
 
+	bool robust_buffer_access;
 	bool always_use_syncobj;
 	bool has_distributed_tess;
 	bool pbb_allowed;

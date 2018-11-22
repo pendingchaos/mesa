@@ -1880,22 +1880,29 @@ radv_flush_constants(struct radv_cmd_buffer *cmd_buffer,
 	cmd_buffer->push_constant_stages &= ~stages;
 	assert(cmd_buffer->cs->cdw <= cdw_max);
 
-	//TODO(pendingchaos): "merged stages"?
-	//TODO(pendingchaos): why is there as radv_get_shader() helper?
+	//TODO(pendingchaos): is this correct with merged stages?
+	prev_shader = NULL;
 	radv_foreach_stage(stage, stages) {
 		shader = radv_get_shader(pipeline, stage);
 		if (!shader)
 			continue;
 
-		struct radv_userdata_info *loc = radv_lookup_user_sgpr(pipeline, stage, AC_UD_FAST_PUSH_CONSTANTS);
-		uint32_t base_reg = pipeline->user_data_0[stage];
-		if (loc->sgpr_idx == -1)
-			return;
-		unsigned sh_offset = base_reg + loc->sgpr_idx * 4;
+		if (shader && shader == prev_shader)
+			continue;
 
-		radeon_emit(cmd_buffer->cs, PKT3(PKT3_SET_SH_REG, shader->info.info.fast_push_constants_size, 0));
-		radeon_emit(cmd_buffer->cs, (sh_offset - SI_SH_REG_OFFSET) >> 2);
-		radeon_emit_array(cmd_buffer->cs, cmd_buffer->push_constants, shader->info.info.fast_push_constants_size);
+		if (shader->info.info.fast_push_constants_size) {
+			struct radv_userdata_info *loc = radv_lookup_user_sgpr(pipeline, stage, AC_UD_FAST_PUSH_CONSTANTS);
+			uint32_t base_reg = pipeline->user_data_0[stage];
+			if (loc->sgpr_idx == -1)
+				return;
+			unsigned sh_offset = base_reg + loc->sgpr_idx * 4;
+
+			radeon_emit(cmd_buffer->cs, PKT3(PKT3_SET_SH_REG, shader->info.info.fast_push_constants_size, 0));
+			radeon_emit(cmd_buffer->cs, (sh_offset - SI_SH_REG_OFFSET) >> 2);
+			radeon_emit_array(cmd_buffer->cs, cmd_buffer->push_constants, shader->info.info.fast_push_constants_size);
+		}
+
+		prev_shader = shader;
 	}
 }
 

@@ -590,6 +590,7 @@ shader_variant_create(struct radv_device *device,
 	options->check_ir = device->instance->debug_flags & RADV_DEBUG_CHECKIR;
 	options->tess_offchip_block_dw_size = device->tess_offchip_block_dw_size;
 	options->address32_hi = device->physical_device->rad_info.address32_hi;
+	options->robust_buffer_access = device->robust_buffer_access;
 
 	if (options->supports_spill)
 		tm_options |= AC_TM_SUPPORTS_SPILL;

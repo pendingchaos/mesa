@@ -703,11 +703,12 @@ static void allocate_user_sgprs(struct radv_shader_context *ctx,
 	uint32_t available_sgprs = ctx->options->chip_class >= GFX9 && stage != MESA_SHADER_COMPUTE ? 32 : 16;
 	uint32_t remaining_sgprs = available_sgprs - user_sgpr_count;
 
-    if (stage == MESA_SHADER_VERTEX) {
+    ctx->shader_info->direct_vertex_buffer_addrs = 0;
+    if (stage == MESA_SHADER_VERTEX && !ctx->options->robust_buffer_access) {
         uint32_t num_vs_attribs = ctx->options->key.vs.attrib_count;
-        // "remaining_sgprs / 2 - 1" instead of "remaining_sgprs / 2" to leave space for descriptor set stuff
-        //TODO(pendingchaos): do "(remaining_sgprs - 1) / 2" instead
-        ctx->shader_info->direct_vertex_buffer_addrs = MIN2(remaining_sgprs / 2 - 1, num_vs_attribs);
+        // "(remaining_sgprs - (HAVE_32BIT_POINTERS ? 1 : 2)) / 2" instead of "remaining_sgprs / 2" to leave space for descriptor set stuff
+        ctx->shader_info->direct_vertex_buffer_addrs = MIN2((remaining_sgprs - (HAVE_32BIT_POINTERS ? 1 : 2)) / 2, num_vs_attribs);
+        ctx->shader_info->direct_vertex_buffer_addrs = MIN2(ctx->shader_info->direct_vertex_buffer_addrs, 6); //TODO(pendingchaos): experiment
         user_sgpr_count += ctx->shader_info->direct_vertex_buffer_addrs * 2;
         remaining_sgprs -= ctx->shader_info->direct_vertex_buffer_addrs * 2;
     }
@@ -730,7 +731,8 @@ static void allocate_user_sgprs(struct radv_shader_context *ctx,
     assert(remaining_sgprs == available_sgprs - user_sgpr_count);
 
 	ctx->shader_info->info.fast_push_constants_size =
-	    MIN2(ctx->shader_info->info.fast_push_constants_size, remaining_sgprs);
+	    0; //TODO(pendingchaos): disabled for now
+	    //MIN2(ctx->shader_info->info.fast_push_constants_size, remaining_sgprs);
 	ctx->abi.fast_push_constants_size = ctx->shader_info->info.fast_push_constants_size;
 
 	remaining_sgprs -= ctx->abi.fast_push_constants_size;
@@ -938,6 +940,8 @@ set_vs_specific_input_locs(struct radv_shader_context *ctx,
 
 		set_loc_shader(ctx, AC_UD_VS_BASE_VERTEX_START_INSTANCE,
 			       user_sgpr_idx, vs_num);
+
+		set_loc_shader(ctx, AC_UD_VS_VERTEX_BUFFER_ADDRS, user_sgpr_idx, ctx->shader_info->direct_vertex_buffer_addrs * 2);
 	}
 }
 
@@ -2099,7 +2103,6 @@ handle_vs_input_decl(struct radv_shader_context *ctx,
 			LLVMValueRef t_offset = LLVMConstInt(ctx->ac.i32, attrib_index, false);
 			t_list = ac_build_load_to_sgpr(&ctx->ac, t_list_ptr, t_offset);
 		} else {
-			//TODO(pendingchaos): respect robustBufferAccess
 			LLVMValueRef words[4];
 			words[0] = ctx->vertex_buffer_addrs[attrib_index][0];
 			words[1] = ctx->vertex_buffer_addrs[attrib_index][1];
