@@ -47,6 +47,8 @@
 // Match MAX_SETS from radv_descriptor_set.h
 #define RADV_UD_MAX_SETS MAX_SETS
 #define MAX_VERTEX_ATTRIBS 32
+#define MAX_SO_BUFFERS 4
+#define MAX_SO_OUTPUTS 64
 
 #define RADV_NUM_PHYSICAL_VGPRS 256
 
