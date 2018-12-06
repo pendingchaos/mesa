@@ -4238,6 +4238,68 @@ static void visit_cf_list(struct ac_nir_context *ctx,
 	}
 }
 
+static unsigned traverse_var_component_slots(struct ac_llvm_context *ctx, bool vs_in,
+					     struct nir_variable *var, unsigned cur_offset,
+					     const struct glsl_type *cur_type,
+					     void (*cb)(struct ac_llvm_context *, unsigned, enum glsl_base_type, void *),
+					     void *cbdata)
+{
+	if (glsl_type_is_struct(cur_type)) {
+		for (unsigned i = 0; i < glsl_get_length(cur_type); i++) {
+			const struct glsl_type *ft = glsl_get_struct_field(cur_type, i);
+			cur_offset = traverse_var_component_slots(ctx, vs_in, var, cur_offset, ft, cb, cbdata);
+		}
+		return (cur_offset + 3) / 4 * 4;
+	}
+
+	enum glsl_base_type base_type = glsl_get_base_type(glsl_without_array_or_matrix(cur_type));
+
+	unsigned stride = glsl_get_component_slots(glsl_without_array_or_matrix(cur_type));
+	if (!var->data.compact)
+		stride = (stride + 3) / 4 * 4;
+	unsigned arr_len = MAX2(glsl_get_matrix_columns(cur_type), 1);
+	if (glsl_type_is_array(cur_type))
+		arr_len *= glsl_get_aoa_size(cur_type);
+	for (unsigned i = 0; i < arr_len; i++) {
+		for (unsigned j = 0; j < glsl_get_component_slots(glsl_without_array_or_matrix(cur_type)); j++) {
+			cb(ctx, cur_offset + var->data.location_frac + j, base_type, cbdata);
+		}
+		cur_offset += stride;
+	}
+	return cur_offset;
+}
+
+static void setup_output_type(struct ac_llvm_context *ctx, unsigned index, enum glsl_base_type base, void *output_types)
+{
+	LLVMTypeRef type;
+	switch (base) {
+	case GLSL_TYPE_INT8:
+	case GLSL_TYPE_UINT8:
+		type = ctx->i8;
+		break;
+	case GLSL_TYPE_INT16:
+	case GLSL_TYPE_UINT16:
+		type = ctx->i16;
+		break;
+	case GLSL_TYPE_FLOAT16:
+		type = ctx->f16;
+		break;
+	case GLSL_TYPE_INT:
+	case GLSL_TYPE_UINT:
+	case GLSL_TYPE_BOOL:
+	case GLSL_TYPE_INT64:
+	case GLSL_TYPE_UINT64:
+		type = ctx->i32;
+		break;
+	case GLSL_TYPE_FLOAT:
+	case GLSL_TYPE_DOUBLE:
+	default:
+		type = ctx->f32;
+		break;
+	}
+	((LLVMTypeRef*)output_types)[index] = type;
+}
+
 void
 ac_handle_shader_output_decl(struct ac_llvm_context *ctx,
 			     struct ac_shader_abi *abi,
@@ -4275,6 +4337,9 @@ ac_handle_shader_output_decl(struct ac_llvm_context *ctx,
 		                       ac_build_alloca_undef(ctx, type, "");
 		}
 	}
+
+	traverse_var_component_slots(ctx, false, variable, output_loc * 4,
+				     variable->type, &setup_output_type, abi->output_types);
 }
 
 static void
@@ -4327,6 +4392,9 @@ void ac_nir_translate(struct ac_llvm_context *ac, struct ac_shader_abi *abi,
 	ctx.stage = nir->info.stage;
 
 	ctx.main_function = LLVMGetBasicBlockParent(LLVMGetInsertBlock(ctx.ac.builder));
+
+	for (unsigned i = 0; i < AC_LLVM_MAX_OUTPUTS * 4; i++)
+		ctx.abi->output_types[i] = ac->i32;
 
 	nir_foreach_variable(variable, &nir->outputs)
 		ac_handle_shader_output_decl(&ctx.ac, ctx.abi, nir, variable,
