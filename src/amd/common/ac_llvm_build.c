@@ -1555,36 +1555,12 @@ ac_build_umsb(struct ac_llvm_context *ctx,
 	      LLVMValueRef arg,
 	      LLVMTypeRef dst_type)
 {
-	const char *intrin_name;
-	LLVMTypeRef type;
-	LLVMValueRef highest_bit;
-	LLVMValueRef zero;
-	unsigned bitsize;
-
-	bitsize = ac_get_elem_bits(ctx, LLVMTypeOf(arg));
-	switch (bitsize) {
-	case 64:
-		intrin_name = "llvm.ctlz.i64";
-		type = ctx->i64;
-		highest_bit = LLVMConstInt(ctx->i64, 63, false);
-		zero = ctx->i64_0;
-		break;
-	case 32:
-		intrin_name = "llvm.ctlz.i32";
-		type = ctx->i32;
-		highest_bit = LLVMConstInt(ctx->i32, 31, false);
-		zero = ctx->i32_0;
-		break;
-	case 16:
-		intrin_name = "llvm.ctlz.i16";
-		type = ctx->i16;
-		highest_bit = LLVMConstInt(ctx->i16, 15, false);
-		zero = ctx->i16_0;
-		break;
-	default:
-		unreachable(!"invalid bitsize");
-		break;
-	}
+	LLVMTypeRef type = LLVMTypeOf(arg);
+	unsigned bitsize = ac_get_elem_bits(ctx, type);
+	LLVMValueRef highest_bit = LLVMConstInt(type, bitsize - 1, false);
+	LLVMValueRef zero = LLVMConstInt(type, 0, false);
+	char intrin_name[64];
+	snprintf(intrin_name, sizeof(intrin_name), "llvm.ctlz.i%d", bitsize);
 
 	LLVMValueRef params[2] = {
 		arg,
@@ -1598,7 +1574,7 @@ ac_build_umsb(struct ac_llvm_context *ctx,
 	/* The HW returns the last bit index from MSB, but TGSI/NIR wants
 	 * the index from LSB. Invert it by doing "31 - msb". */
 	msb = LLVMBuildSub(ctx->builder, highest_bit, msb, "");
-	msb = LLVMBuildTruncOrBitCast(ctx->builder, msb, ctx->i32, "");
+	msb = ac_build_ui_cast(ctx, msb, dst_type);
 
 	/* check for zero */
 	return LLVMBuildSelect(ctx->builder,
