@@ -2474,30 +2474,11 @@ LLVMValueRef ac_find_lsb(struct ac_llvm_context *ctx,
 			 LLVMTypeRef dst_type,
 			 LLVMValueRef src0)
 {
-	unsigned src0_bitsize = ac_get_elem_bits(ctx, LLVMTypeOf(src0));
-	const char *intrin_name;
-	LLVMTypeRef type;
-	LLVMValueRef zero;
-
-	switch (src0_bitsize) {
-	case 64:
-		intrin_name = "llvm.cttz.i64";
-		type = ctx->i64;
-		zero = ctx->i64_0;
-		break;
-	case 32:
-		intrin_name = "llvm.cttz.i32";
-		type = ctx->i32;
-		zero = ctx->i32_0;
-		break;
-	case 16:
-		intrin_name = "llvm.cttz.i16";
-		type = ctx->i16;
-		zero = ctx->i16_0;
-		break;
-	default:
-		unreachable(!"invalid bitsize");
-	}
+	LLVMTypeRef type = LLVMTypeOf(src0);
+	unsigned src0_bitsize = ac_get_elem_bits(ctx, type);
+	char intrin_name[64];
+	LLVMValueRef zero = LLVMConstInt(type, 0, false);
+	snprintf(intrin_name, sizeof(intrin_name), "llvm.cttz.i%d", src0_bitsize);
 
 	LLVMValueRef params[2] = {
 		src0,
@@ -2518,9 +2499,7 @@ LLVMValueRef ac_find_lsb(struct ac_llvm_context *ctx,
 					      params, 2,
 					      AC_FUNC_ATTR_READNONE);
 
-	if (src0_bitsize == 64) {
-		lsb = LLVMBuildTrunc(ctx->builder, lsb, ctx->i32, "");
-	}
+	lsb = ac_build_ui_cast(ctx, lsb, ctx->i32);
 
 	/* TODO: We need an intrinsic to skip this conditional. */
 	/* Check for zero: */
