@@ -877,6 +877,23 @@ void radv_GetPhysicalDeviceFeatures2(
 			features->bufferDeviceAddressMultiDevice = false;
 			break;
 		}
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT16_INT8_FEATURES_KHR: {
+			VkPhysicalDeviceFloat16Int8FeaturesKHR *features =
+				(VkPhysicalDeviceFloat16Int8FeaturesKHR*)ext;
+			bool enabled = pdevice->rad_info.chip_class >= VI;
+			features->shaderFloat16 = enabled && HAVE_LLVM >= 0x0800;
+			features->shaderInt8 = enabled;
+			break;
+		}
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_8BIT_STORAGE_FEATURES_KHR: {
+			VkPhysicalDevice8BitStorageFeaturesKHR *features =
+			    (VkPhysicalDevice8BitStorageFeaturesKHR*)ext;
+			bool enabled = pdevice->rad_info.chip_class >= VI;
+			features->storageBuffer8BitAccess = enabled;
+			features->uniformAndStorageBuffer8BitAccess = enabled;
+			features->storagePushConstant8 = enabled;
+			break;
+		}
 		default:
 			break;
 		}
