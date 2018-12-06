@@ -87,12 +87,16 @@ ac_llvm_context_init(struct ac_llvm_context *ctx,
 	ctx->v4f32 = LLVMVectorType(ctx->f32, 4);
 	ctx->v8i32 = LLVMVectorType(ctx->i32, 8);
 
+	ctx->i8_0 = LLVMConstInt(ctx->i8, 0, false);
+	ctx->i8_1 = LLVMConstInt(ctx->i8, 1, false);
 	ctx->i16_0 = LLVMConstInt(ctx->i16, 0, false);
 	ctx->i16_1 = LLVMConstInt(ctx->i16, 1, false);
 	ctx->i32_0 = LLVMConstInt(ctx->i32, 0, false);
 	ctx->i32_1 = LLVMConstInt(ctx->i32, 1, false);
 	ctx->i64_0 = LLVMConstInt(ctx->i64, 0, false);
 	ctx->i64_1 = LLVMConstInt(ctx->i64, 1, false);
+	ctx->f16_0 = LLVMConstReal(ctx->f16, 0.0);
+	ctx->f16_1 = LLVMConstReal(ctx->f16, 1.0);
 	ctx->f32_0 = LLVMConstReal(ctx->f32, 0.0);
 	ctx->f32_1 = LLVMConstReal(ctx->f32, 1.0);
 	ctx->f64_0 = LLVMConstReal(ctx->f64, 0.0);
@@ -201,7 +205,9 @@ ac_get_type_size(LLVMTypeRef type)
 
 static LLVMTypeRef to_integer_type_scalar(struct ac_llvm_context *ctx, LLVMTypeRef t)
 {
-	if (t == ctx->f16 || t == ctx->i16)
+	if (t == ctx->i8)
+		return ctx->i8;
+	else if (t == ctx->f16 || t == ctx->i16)
 		return ctx->i16;
 	else if (t == ctx->f32 || t == ctx->i32)
 		return ctx->i32;
@@ -279,6 +285,42 @@ ac_to_float(struct ac_llvm_context *ctx, LLVMValueRef v)
 {
 	LLVMTypeRef type = LLVMTypeOf(v);
 	return LLVMBuildBitCast(ctx->builder, v, ac_to_float_type(ctx, type), "");
+}
+
+LLVMTypeRef ac_float_of_size(struct ac_llvm_context *ctx, unsigned bit_size)
+{
+	switch (bit_size) {
+	case 16:
+		return ctx->f16;
+	case 32:
+		return ctx->f32;
+	case 64:
+		return ctx->f64;
+	default:
+		unreachable("Unhandled bit size");
+	}
+}
+
+LLVMValueRef ac_build_ui_cast(struct ac_llvm_context *ctx, LLVMValueRef v, LLVMTypeRef t)
+{
+	unsigned new_bit_size = ac_get_elem_bits(ctx, t);
+	unsigned old_bit_size = ac_get_elem_bits(ctx, LLVMTypeOf(v));
+	if (new_bit_size > old_bit_size)
+		return LLVMBuildZExt(ctx->builder, v, t, "");
+	else if (new_bit_size < old_bit_size)
+		return LLVMBuildTrunc(ctx->builder, v, t, "");
+	else
+		return v;
+}
+
+LLVMValueRef ac_build_reinterpret(struct ac_llvm_context *ctx, LLVMValueRef v, LLVMTypeRef t)
+{
+	if (LLVMTypeOf(v) == t)
+		return v;
+
+	v = ac_to_integer(ctx, v);
+	v = ac_build_ui_cast(ctx, v, ac_to_integer_type(ctx, t));
+	return LLVMBuildBitCast(ctx->builder, v, t, "");
 }
 
 
@@ -1338,15 +1380,18 @@ LLVMValueRef ac_build_buffer_load_format_gfx9_safe(struct ac_llvm_context *ctx,
 }
 
 LLVMValueRef
-ac_build_tbuffer_load_short(struct ac_llvm_context *ctx,
+ac_build_tbuffer_load_short_byte(struct ac_llvm_context *ctx,
 			    LLVMValueRef rsrc,
 			    LLVMValueRef vindex,
 			    LLVMValueRef voffset,
 				LLVMValueRef soffset,
 				LLVMValueRef immoffset,
-				LLVMValueRef glc)
+				LLVMValueRef glc,
+				unsigned size)
 {
+	assert(size == 1 || size == 2);
 	const char *name = "llvm.amdgcn.tbuffer.load.i32";
+	int data_format = size == 1 ? V_008F0C_BUF_DATA_FORMAT_8 : V_008F0C_BUF_DATA_FORMAT_16;
 	LLVMTypeRef type = ctx->i32;
 	LLVMValueRef params[] = {
 				rsrc,
@@ -1354,13 +1399,13 @@ ac_build_tbuffer_load_short(struct ac_llvm_context *ctx,
 				voffset,
 				soffset,
 				immoffset,
-				LLVMConstInt(ctx->i32, V_008F0C_BUF_DATA_FORMAT_16, false),
+				LLVMConstInt(ctx->i32, data_format, false),
 				LLVMConstInt(ctx->i32, V_008F0C_BUF_NUM_FORMAT_UINT, false),
 				glc,
 				ctx->i1false,
 	};
 	LLVMValueRef res = ac_build_intrinsic(ctx, name, type, params, 9, 0);
-	return LLVMBuildTrunc(ctx->builder, res, ctx->i16, "");
+	return LLVMBuildTrunc(ctx->builder, res, LLVMIntTypeInContext(ctx->context, size * 8), "");
 }
 
 /**

@@ -1677,13 +1677,14 @@ static LLVMValueRef visit_load_buffer(struct ac_nir_context *ctx,
 
 		LLVMValueRef ret;
 		if (load_bytes == 2) {
-			ret = ac_build_tbuffer_load_short(&ctx->ac,
-							  rsrc,
-							  vindex,
-							  offset,
-							  ctx->ac.i32_0,
-							  immoffset,
-							  glc);
+			ret = ac_build_tbuffer_load_short_byte(&ctx->ac,
+							       rsrc,
+							       vindex,
+							       offset,
+							       ctx->ac.i32_0,
+							       immoffset,
+							       glc,
+							       2);
 		} else {
 			const char *load_name;
 			LLVMTypeRef data_type;
@@ -1748,13 +1749,14 @@ static LLVMValueRef visit_load_ubo_buffer(struct ac_nir_context *ctx,
 	if (instr->dest.ssa.bit_size == 16) {
 		LLVMValueRef results[num_components];
 		for (unsigned i = 0; i < num_components; ++i) {
-			results[i] = ac_build_tbuffer_load_short(&ctx->ac,
-								 rsrc,
-								 ctx->ac.i32_0,
-								 offset,
-								 ctx->ac.i32_0,
-								 LLVMConstInt(ctx->ac.i32, 2 * i, 0),
-								 ctx->ac.i1false);
+			results[i] = ac_build_tbuffer_load_short_byte(&ctx->ac,
+								      rsrc,
+								      ctx->ac.i32_0,
+								      offset,
+								      ctx->ac.i32_0,
+								      LLVMConstInt(ctx->ac.i32, 2 * i, 0),
+								      ctx->ac.i1false,
+								      2);
 		}
 		ret = ac_build_gather_values(&ctx->ac, results, num_components);
 	} else {
