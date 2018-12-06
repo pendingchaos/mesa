@@ -91,6 +91,8 @@ EXTENSIONS = [
     Extension('VK_KHR_xlib_surface',                      6, 'VK_USE_PLATFORM_XLIB_KHR'),
     Extension('VK_KHR_multiview',                         1, True),
     Extension('VK_KHR_display',                          23, 'VK_USE_PLATFORM_DISPLAY_KHR'),
+    Extension('VK_KHR_shader_float16_int8',               1, 'device->rad_info.chip_class >= VI'),
+    Extension('VK_KHR_8bit_storage',                      1, 'device->rad_info.chip_class >= VI'),
     Extension('VK_EXT_direct_mode_display',               1, 'VK_USE_PLATFORM_DISPLAY_KHR'),
     Extension('VK_EXT_acquire_xlib_display',              1, 'VK_USE_PLATFORM_XLIB_XRANDR_EXT'),
     Extension('VK_EXT_buffer_device_address',             1, True),
@@ -121,6 +123,8 @@ EXTENSIONS = [
     Extension('VK_AMD_shader_core_properties',            1, True),
     Extension('VK_AMD_shader_info',                       1, True),
     Extension('VK_AMD_shader_trinary_minmax',             1, True),
+    Extension('VK_AMD_gpu_shader_half_float',             1, 'device->rad_info.chip_class >= VI && HAVE_LLVM >= 0x0800'),
+    Extension('VK_AMD_gpu_shader_int16',                  1, 'device->rad_info.chip_class >= VI'),
     Extension('VK_GOOGLE_decorate_string',                1, True),
     Extension('VK_GOOGLE_hlsl_functionality1',            1, True),
 ]
