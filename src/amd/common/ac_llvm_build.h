@@ -74,12 +74,16 @@ struct ac_llvm_context {
 	LLVMTypeRef v4f32;
 	LLVMTypeRef v8i32;
 
+	LLVMValueRef i8_0;
+	LLVMValueRef i8_1;
 	LLVMValueRef i16_0;
 	LLVMValueRef i16_1;
 	LLVMValueRef i32_0;
 	LLVMValueRef i32_1;
 	LLVMValueRef i64_0;
 	LLVMValueRef i64_1;
+	LLVMValueRef f16_0;
+	LLVMValueRef f16_1;
 	LLVMValueRef f32_0;
 	LLVMValueRef f32_1;
 	LLVMValueRef f64_0;
@@ -129,6 +133,12 @@ LLVMValueRef ac_to_integer(struct ac_llvm_context *ctx, LLVMValueRef v);
 LLVMValueRef ac_to_integer_or_pointer(struct ac_llvm_context *ctx, LLVMValueRef v);
 LLVMTypeRef ac_to_float_type(struct ac_llvm_context *ctx, LLVMTypeRef t);
 LLVMValueRef ac_to_float(struct ac_llvm_context *ctx, LLVMValueRef v);
+
+LLVMTypeRef ac_float_of_size(struct ac_llvm_context *ctx, unsigned bit_size);
+
+LLVMValueRef ac_build_ui_cast(struct ac_llvm_context *ctx, LLVMValueRef v, LLVMTypeRef t);
+
+LLVMValueRef ac_build_reinterpret(struct ac_llvm_context *ctx, LLVMValueRef v, LLVMTypeRef t);
 
 LLVMValueRef
 ac_build_intrinsic(struct ac_llvm_context *ctx, const char *name,
@@ -293,13 +303,14 @@ LLVMValueRef ac_build_buffer_load_format_gfx9_safe(struct ac_llvm_context *ctx,
                                                   bool can_speculate);
 
 LLVMValueRef
-ac_build_tbuffer_load_short(struct ac_llvm_context *ctx,
+ac_build_tbuffer_load_short_byte(struct ac_llvm_context *ctx,
 			    LLVMValueRef rsrc,
 			    LLVMValueRef vindex,
 			    LLVMValueRef voffset,
 				LLVMValueRef soffset,
 				LLVMValueRef immoffset,
-				LLVMValueRef glc);
+				LLVMValueRef glc,
+				unsigned size);
 
 LLVMValueRef
 ac_get_thread_id(struct ac_llvm_context *ctx);
