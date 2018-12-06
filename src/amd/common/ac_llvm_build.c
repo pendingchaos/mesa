@@ -1597,16 +1597,20 @@ ac_build_umsb(struct ac_llvm_context *ctx,
 LLVMValueRef ac_build_fmin(struct ac_llvm_context *ctx, LLVMValueRef a,
 			   LLVMValueRef b)
 {
+	char intr[64];
+	snprintf(intr, sizeof(intr), "llvm.minnum.f%d", ac_get_elem_bits(ctx, LLVMTypeOf(a)));
 	LLVMValueRef args[2] = {a, b};
-	return ac_build_intrinsic(ctx, "llvm.minnum.f32", ctx->f32, args, 2,
+	return ac_build_intrinsic(ctx, intr, LLVMTypeOf(a), args, 2,
 				  AC_FUNC_ATTR_READNONE);
 }
 
 LLVMValueRef ac_build_fmax(struct ac_llvm_context *ctx, LLVMValueRef a,
 			   LLVMValueRef b)
 {
+	char intr[64];
+	snprintf(intr, sizeof(intr), "llvm.maxnum.f%d", ac_get_elem_bits(ctx, LLVMTypeOf(a)));
 	LLVMValueRef args[2] = {a, b};
-	return ac_build_intrinsic(ctx, "llvm.maxnum.f32", ctx->f32, args, 2,
+	return ac_build_intrinsic(ctx, intr, LLVMTypeOf(a), args, 2,
 				  AC_FUNC_ATTR_READNONE);
 }
 
@@ -1633,8 +1637,9 @@ LLVMValueRef ac_build_umin(struct ac_llvm_context *ctx, LLVMValueRef a,
 
 LLVMValueRef ac_build_clamp(struct ac_llvm_context *ctx, LLVMValueRef value)
 {
-	return ac_build_fmin(ctx, ac_build_fmax(ctx, value, ctx->f32_0),
-			     ctx->f32_1);
+	LLVMTypeRef t = LLVMTypeOf(value);
+	return ac_build_fmin(ctx, ac_build_fmax(ctx, value, LLVMConstReal(t, 0.0)),
+			     LLVMConstReal(t, 1.0));
 }
 
 void ac_build_export(struct ac_llvm_context *ctx, struct ac_export_args *a)
