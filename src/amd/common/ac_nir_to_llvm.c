@@ -316,14 +316,20 @@ static LLVMValueRef emit_b2f(struct ac_llvm_context *ctx,
 			     unsigned bitsize)
 {
 	LLVMValueRef result = LLVMBuildAnd(ctx->builder, src0,
-					   LLVMBuildBitCast(ctx->builder, LLVMConstReal(ctx->f32, 1.0), ctx->i32, ""),
+					   LLVMBuildBitCast(ctx->builder, ctx->f32_1, ctx->i32, ""),
 					   "");
 	result = LLVMBuildBitCast(ctx->builder, result, ctx->f32, "");
 
-	if (bitsize == 32)
+	switch (bitsize) {
+	case 16:
+		return LLVMBuildFPTrunc(ctx->builder, result, ctx->f16, "");
+	case 32:
 		return result;
-
-	return LLVMBuildFPExt(ctx->builder, result, ctx->f64, "");
+	case 64:
+		return LLVMBuildFPExt(ctx->builder, result, ctx->f64, "");
+	default:
+		unreachable("Unsupported bit size.");
+	}
 }
 
 static LLVMValueRef emit_f2b(struct ac_llvm_context *ctx,
