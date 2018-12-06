@@ -672,20 +672,17 @@ static void visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
 		break;
 	case nir_op_ishl:
 		result = LLVMBuildShl(ctx->ac.builder, src[0],
-				      LLVMBuildZExt(ctx->ac.builder, src[1],
-						    LLVMTypeOf(src[0]), ""),
+				      ac_build_ui_cast(&ctx->ac, src[1], LLVMTypeOf(src[0])),
 				      "");
 		break;
 	case nir_op_ishr:
 		result = LLVMBuildAShr(ctx->ac.builder, src[0],
-				       LLVMBuildZExt(ctx->ac.builder, src[1],
-						     LLVMTypeOf(src[0]), ""),
+				       ac_build_ui_cast(&ctx->ac, src[1], LLVMTypeOf(src[0])),
 				       "");
 		break;
 	case nir_op_ushr:
 		result = LLVMBuildLShr(ctx->ac.builder, src[0],
-				       LLVMBuildZExt(ctx->ac.builder, src[1],
-						     LLVMTypeOf(src[0]), ""),
+				       ac_build_ui_cast(&ctx->ac, src[1], LLVMTypeOf(src[0])),
 				       "");
 		break;
 	case nir_op_ilt32:
