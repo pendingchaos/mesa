@@ -3910,6 +3910,9 @@ radv_compile_gs_copy_shader(struct ac_llvm_compiler *ac_llvm,
 	ctx.gs_max_out_vertices = geom_shader->info.gs.vertices_out;
 	ac_setup_rings(&ctx);
 
+	for (unsigned i = 0; i < AC_LLVM_MAX_OUTPUTS * 4; i++)
+		ctx.abi.output_types[i] = ctx.ac.i32;
+
 	nir_foreach_variable(variable, &geom_shader->outputs) {
 		scan_shader_output_decl(&ctx, variable, geom_shader, MESA_SHADER_VERTEX);
 		ac_handle_shader_output_decl(&ctx.ac, &ctx.abi, geom_shader,

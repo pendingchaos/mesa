@@ -69,6 +69,7 @@ struct ac_shader_abi {
 	LLVMValueRef view_index;
 
 	LLVMValueRef outputs[AC_LLVM_MAX_OUTPUTS * 4];
+	LLVMTypeRef output_types[AC_LLVM_MAX_OUTPUTS * 4];
 
 	/* For VS and PS: pre-loaded shader inputs.
 	 *
