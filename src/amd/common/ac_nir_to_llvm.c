@@ -1524,7 +1524,7 @@ static void visit_store_ssbo(struct ac_nir_context *ctx,
 
 	LLVMValueRef rsrc = ctx->abi->load_ssbo(ctx->abi,
 				        get_src(ctx, instr->src[1]), true);
-	LLVMValueRef base_data = ac_to_float(&ctx->ac, src_data);
+	LLVMValueRef base_data = src_data;
 	base_data = ac_trim_vector(&ctx->ac, base_data, instr->num_components);
 	LLVMValueRef base_offset = get_src(ctx, instr->src[2]);
 
@@ -1565,7 +1565,25 @@ static void visit_store_ssbo(struct ac_nir_context *ctx,
 			offset = LLVMBuildAdd(ctx->ac.builder, base_offset,
 					      LLVMConstInt(ctx->ac.i32, start * elem_size_bytes, false), "");
 		}
-		if (num_bytes == 2) {
+		if (num_bytes == 1) {
+			store_name = "llvm.amdgcn.tbuffer.store.i32";
+			data_type = ctx->ac.i32;
+			data = LLVMBuildZExt(ctx->ac.builder, data, data_type, "");
+			LLVMValueRef tbuffer_params[] = {
+				data,
+				rsrc,
+				ctx->ac.i32_0, /* vindex */
+				offset,        /* voffset */
+				ctx->ac.i32_0,
+				ctx->ac.i32_0,
+				LLVMConstInt(ctx->ac.i32, 1, false), // dfmt (= 8bit)
+				LLVMConstInt(ctx->ac.i32, 4, false), // nfmt (= uint)
+				glc,
+				ctx->ac.i1false,
+			};
+			ac_build_intrinsic(&ctx->ac, store_name,
+					   ctx->ac.voidt, tbuffer_params, 10, 0);
+		} else if (num_bytes == 2) {
 			store_name = "llvm.amdgcn.tbuffer.store.i32";
 			data_type = ctx->ac.i32;
 			LLVMValueRef tbuffer_params[] = {
