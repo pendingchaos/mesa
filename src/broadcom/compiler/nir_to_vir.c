@@ -2471,6 +2471,7 @@ const nir_shader_compiler_options v3d_nir_options = {
         .lower_fdiv = true,
         .lower_find_lsb = true,
         .lower_ffma = true,
+        .lower_ffma16 = true,
         .lower_flrp32 = true,
         .lower_fpow = true,
         .lower_fsat = true,
