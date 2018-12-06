@@ -1531,6 +1531,10 @@ ac_build_imsb(struct ac_llvm_context *ctx,
 	      LLVMValueRef arg,
 	      LLVMTypeRef dst_type)
 {
+	/* TODO: support 64-bit integers */
+	if (LLVMTypeOf(arg) != ctx->i32)
+		arg = LLVMBuildSExt(ctx->builder, arg, ctx->i32, "");
+
 	LLVMValueRef msb = ac_build_intrinsic(ctx, "llvm.amdgcn.sffbh.i32",
 					      dst_type, &arg, 1,
 					      AC_FUNC_ATTR_READNONE);
