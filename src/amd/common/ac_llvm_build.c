@@ -2079,19 +2079,11 @@ LLVMValueRef ac_build_isign(struct ac_llvm_context *ctx, LLVMValueRef src0,
 LLVMValueRef ac_build_fsign(struct ac_llvm_context *ctx, LLVMValueRef src0,
 			    unsigned bitsize)
 {
-	LLVMValueRef cmp, val, zero, one;
-	LLVMTypeRef type;
+	LLVMTypeRef type = ac_float_of_size(ctx, bitsize);
+	LLVMValueRef zero = LLVMConstReal(type, 0.0);
+	LLVMValueRef one = LLVMConstReal(type, 1.0);
 
-	if (bitsize == 32) {
-		type = ctx->f32;
-		zero = ctx->f32_0;
-		one = ctx->f32_1;
-	} else {
-		type = ctx->f64;
-		zero = ctx->f64_0;
-		one = ctx->f64_1;
-	}
-
+	LLVMValueRef cmp, val;
 	cmp = LLVMBuildFCmp(ctx->builder, LLVMRealOGT, src0, zero, "");
 	val = LLVMBuildSelect(ctx->builder, cmp, one, src0, "");
 	cmp = LLVMBuildFCmp(ctx->builder, LLVMRealOGE, val, zero, "");
