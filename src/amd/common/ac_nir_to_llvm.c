@@ -347,11 +347,7 @@ static LLVMValueRef emit_b2i(struct ac_llvm_context *ctx,
 			     unsigned bitsize)
 {
 	LLVMValueRef result = LLVMBuildAnd(ctx->builder, src0, ctx->i32_1, "");
-
-	if (bitsize == 32)
-		return result;
-
-	return LLVMBuildZExt(ctx->builder, result, ctx->i64, "");
+	return ac_build_ui_cast(ctx, result, LLVMIntTypeInContext(ctx->context, bitsize));
 }
 
 static LLVMValueRef emit_i2b(struct ac_llvm_context *ctx,
