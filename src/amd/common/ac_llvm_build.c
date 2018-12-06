@@ -2868,8 +2868,14 @@ ac_build_readlane(struct ac_llvm_context *ctx, LLVMValueRef src, LLVMValueRef la
 {
 	LLVMTypeRef src_type = LLVMTypeOf(src);
 	src = ac_to_integer(ctx, src);
-	unsigned bits = LLVMGetIntTypeWidth(LLVMTypeOf(src));
+	unsigned src_bits = LLVMGetIntTypeWidth(LLVMTypeOf(src));
+	unsigned bits = src_bits;
 	LLVMValueRef ret;
+
+	if (bits < 32) {
+		src = LLVMBuildZExt(ctx->builder, src, ctx->i32, "");
+		bits = 32;
+	}
 
 	if (bits == 32) {
 		ret = _ac_build_readlane(ctx, src, lane);
@@ -2887,6 +2893,10 @@ ac_build_readlane(struct ac_llvm_context *ctx, LLVMValueRef src, LLVMValueRef la
 						LLVMConstInt(ctx->i32, i, 0), "");
 		}
 	}
+
+	if (src_bits < 32)
+		ret = LLVMBuildTrunc(ctx->builder, ret, LLVMIntTypeInContext(ctx->context, src_bits), "");
+
 	return LLVMBuildBitCast(ctx->builder, ret, src_type, "");
 }
 
