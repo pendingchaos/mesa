@@ -2049,16 +2049,9 @@ void ac_build_waitcnt(struct ac_llvm_context *ctx, unsigned simm16)
 LLVMValueRef ac_build_fract(struct ac_llvm_context *ctx, LLVMValueRef src0,
 			    unsigned bitsize)
 {
-	LLVMTypeRef type;
-	char *intr;
-
-	if (bitsize == 32) {
-		intr = "llvm.floor.f32";
-		type = ctx->f32;
-	} else {
-		intr = "llvm.floor.f64";
-		type = ctx->f64;
-	}
+	LLVMTypeRef type = ac_float_of_size(ctx, bitsize);
+	char intr[64];
+	snprintf(intr, sizeof(intr), "llvm.floor.f%d", bitsize);
 
 	LLVMValueRef params[] = {
 		src0,
