@@ -2297,9 +2297,7 @@ si_llvm_init_export_args(struct radv_shader_context *ctx,
 	if (!values)
 		return;
 
-	bool is_16bit = ac_get_type_size(LLVMTypeOf(values[0])) == 2;
 	if (ctx->stage == MESA_SHADER_FRAGMENT) {
-		bool is_16bit = ac_get_type_size(LLVMTypeOf(values[0])) == 2;
 		unsigned index = target - V_008DFC_SQ_EXP_MRT;
 		unsigned col_format = (ctx->options->key.fs.col_format >> (4 * index)) & 0xf;
 		bool is_int8 = (ctx->options->key.fs.is_int8 >> index) & 1;
@@ -2309,6 +2307,28 @@ si_llvm_init_export_args(struct radv_shader_context *ctx,
 		LLVMValueRef (*packf)(struct ac_llvm_context *ctx, LLVMValueRef args[2]) = NULL;
 		LLVMValueRef (*packi)(struct ac_llvm_context *ctx, LLVMValueRef args[2],
 				      unsigned bits, bool hi) = NULL;
+
+		if (LLVMTypeOf(values[0]) == ctx->ac.f16 &&
+		    col_format != V_028714_SPI_SHADER_FP16_ABGR) {
+			for (unsigned chan = 0; chan < 4; chan++)
+				values[chan] = LLVMBuildFPExt(ctx->ac.builder,
+							      values[chan],
+							      ctx->ac.f32, "");
+		}
+
+		if (LLVMTypeOf(values[0]) == ctx->ac.i16 || LLVMTypeOf(values[0]) == ctx->ac.i8) {
+			if (col_format == V_028714_SPI_SHADER_SINT16_ABGR) {
+				for (unsigned chan = 0; chan < 4; chan++)
+					values[chan] = LLVMBuildSExt(ctx->ac.builder,
+								     values[chan],
+								     ctx->ac.i32, "");
+			} else {
+				for (unsigned chan = 0; chan < 4; chan++)
+					values[chan] = LLVMBuildZExt(ctx->ac.builder,
+								     values[chan],
+								     ctx->ac.i32, "");
+			}
+		}
 
 		switch(col_format) {
 		case V_028714_SPI_SHADER_ZERO:
@@ -2335,12 +2355,16 @@ si_llvm_init_export_args(struct radv_shader_context *ctx,
 
 		case V_028714_SPI_SHADER_FP16_ABGR:
 			args->enabled_channels = 0x5;
-			packf = ac_build_cvt_pkrtz_f16;
-			if (is_16bit) {
-				for (unsigned chan = 0; chan < 4; chan++)
-					values[chan] = LLVMBuildFPExt(ctx->ac.builder,
-								      values[chan],
-								      ctx->ac.f32, "");
+			if (LLVMTypeOf(values[0]) == ctx->ac.f16) {
+				packi = ac_build_cvt_pk_u16;
+				for (unsigned chan = 0; chan < 4; chan++) {
+					values[chan] = ac_to_integer(&ctx->ac, values[chan]);
+					values[chan] = LLVMBuildZExt(ctx->ac.builder,
+								     values[chan],
+								     ctx->ac.i32, "");
+				}
+			} else {
+				packf = ac_build_cvt_pkrtz_f16;
 			}
 			break;
 
@@ -2357,23 +2381,11 @@ si_llvm_init_export_args(struct radv_shader_context *ctx,
 		case V_028714_SPI_SHADER_UINT16_ABGR:
 			args->enabled_channels = 0x5;
 			packi = ac_build_cvt_pk_u16;
-			if (is_16bit) {
-				for (unsigned chan = 0; chan < 4; chan++)
-					values[chan] = LLVMBuildZExt(ctx->ac.builder,
-								      ac_to_integer(&ctx->ac, values[chan]),
-								      ctx->ac.i32, "");
-			}
 			break;
 
 		case V_028714_SPI_SHADER_SINT16_ABGR:
 			args->enabled_channels = 0x5;
 			packi = ac_build_cvt_pk_i16;
-			if (is_16bit) {
-				for (unsigned chan = 0; chan < 4; chan++)
-					values[chan] = LLVMBuildSExt(ctx->ac.builder,
-								      ac_to_integer(&ctx->ac, values[chan]),
-								      ctx->ac.i32, "");
-			}
 			break;
 
 		default:
@@ -2413,6 +2425,9 @@ si_llvm_init_export_args(struct radv_shader_context *ctx,
 			}
 			args->compr = 1; /* COMPR flag */
 		}
+
+		for (unsigned i = 0; i < 4; ++i)
+			args->out[i] = ac_to_float(&ctx->ac, args->out[i]);
 		return;
 	}
 
