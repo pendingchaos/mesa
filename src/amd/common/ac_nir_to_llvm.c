@@ -884,6 +884,7 @@ static void visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
 		result = LLVMBuildUIToFP(ctx->ac.builder, src[0], ac_to_float_type(&ctx->ac, def_type), "");
 		break;
 	case nir_op_f2f16_rtz:
+	case nir_op_f2f16:
 		src[0] = ac_to_float(&ctx->ac, src[0]);
 		if (LLVMTypeOf(src[0]) == ctx->ac.f64)
 			src[0] = LLVMBuildFPTrunc(ctx->ac.builder, src[0], ctx->ac.f32, "");
@@ -894,7 +895,6 @@ static void visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
 		result = LLVMBuildTrunc(ctx->ac.builder, result, ctx->ac.i16, "");
 		break;
 	case nir_op_f2f16_rtne:
-	case nir_op_f2f16:
 	case nir_op_f2f32:
 	case nir_op_f2f64:
 		src[0] = ac_to_float(&ctx->ac, src[0]);
