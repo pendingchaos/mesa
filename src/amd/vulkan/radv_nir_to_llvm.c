@@ -2056,7 +2056,6 @@ static void interp_fs_input(struct radv_shader_context *ctx,
 	LLVMValueRef attr_number;
 	unsigned chan;
 	LLVMValueRef i, j;
-	bool interp = !LLVMIsUndef(interp_param);
 
 	attr_number = LLVMConstInt(ctx->ac.i32, attr, false);
 
@@ -2070,7 +2069,7 @@ static void interp_fs_input(struct radv_shader_context *ctx,
 	 * fs.interp cannot be used on integers, because they can be equal
 	 * to NaN.
 	 */
-	if (interp) {
+	if (interp_param) {
 		interp_param = LLVMBuildBitCast(ctx->ac.builder, interp_param,
 						ctx->ac.v2f32, "");
 
@@ -2083,7 +2082,7 @@ static void interp_fs_input(struct radv_shader_context *ctx,
 	for (chan = 0; chan < 4; chan++) {
 		LLVMValueRef llvm_chan = LLVMConstInt(ctx->ac.i32, chan, false);
 
-		if (interp) {
+		if (interp_param) {
 			result[chan] = ac_build_fs_interp(&ctx->ac,
 							  llvm_chan,
 							  attr_number,
@@ -2095,7 +2094,6 @@ static void interp_fs_input(struct radv_shader_context *ctx,
 							      attr_number,
 							      prim_mask);
 			result[chan] = LLVMBuildBitCast(ctx->ac.builder, result[chan], ctx->ac.i32, "");
-			result[chan] = LLVMBuildTruncOrBitCast(ctx->ac.builder, result[chan], LLVMTypeOf(interp_param), "");
 		}
 	}
 }
@@ -2123,10 +2121,6 @@ handle_fs_input_decl(struct radv_shader_context *ctx,
 
 		interp = lookup_interp_param(&ctx->abi, variable->data.interpolation, interp_type);
 	}
-	bool is_16bit = glsl_type_is_16bit(glsl_without_array(variable->type));
-	LLVMTypeRef type = is_16bit ? ctx->ac.i16 : ctx->ac.i32;
-	if (interp == NULL)
-		interp = LLVMGetUndef(type);
 
 	for (unsigned i = 0; i < attrib_count; ++i)
 		ctx->inputs[ac_llvm_reg_index_soa(idx + i, 0)] = interp;
@@ -2187,7 +2181,7 @@ handle_fs_inputs(struct radv_shader_context *ctx,
 	if (ctx->shader_info->info.ps.uses_input_attachments ||
 	    ctx->shader_info->info.needs_multiview_view_index) {
 		ctx->input_mask |= 1ull << VARYING_SLOT_LAYER;
-		ctx->inputs[ac_llvm_reg_index_soa(VARYING_SLOT_LAYER, 0)] = LLVMGetUndef(ctx->ac.i32);
+		ctx->inputs[ac_llvm_reg_index_soa(VARYING_SLOT_LAYER, 0)] = NULL;
 	}
 
 	for (unsigned i = 0; i < RADEON_LLVM_MAX_INPUTS; ++i) {
@@ -2203,7 +2197,7 @@ handle_fs_inputs(struct radv_shader_context *ctx,
 			interp_fs_input(ctx, index, interp_param, ctx->abi.prim_mask,
 					inputs);
 
-			if (LLVMIsUndef(interp_param))
+			if (!interp_param)
 				ctx->shader_info->fs.flat_shaded_mask |= 1u << index;
 			if (i >= VARYING_SLOT_VAR0)
 				ctx->abi.fs_input_attr_indices[i - VARYING_SLOT_VAR0] = index;
