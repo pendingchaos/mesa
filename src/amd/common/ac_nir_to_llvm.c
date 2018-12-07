@@ -889,7 +889,9 @@ static void visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
 			src[0] = LLVMBuildFPTrunc(ctx->ac.builder, src[0], ctx->ac.f32, "");
 		LLVMValueRef param[2] = { src[0], ctx->ac.f32_0 };
 		result = ac_build_cvt_pkrtz_f16(&ctx->ac, param);
-		result = LLVMBuildExtractElement(ctx->ac.builder, result, ctx->ac.i32_0, "");
+		// generates better code than an extractelement with slp vectorization
+		result = LLVMBuildBitCast(ctx->ac.builder, result, ctx->ac.i32, "");
+		result = LLVMBuildTrunc(ctx->ac.builder, result, ctx->ac.i16, "");
 		break;
 	case nir_op_f2f16_rtne:
 	case nir_op_f2f16:
