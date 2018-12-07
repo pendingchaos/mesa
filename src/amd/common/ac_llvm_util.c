@@ -31,6 +31,7 @@
 #include <llvm-c/Transforms/IPO.h>
 #include <llvm-c/Transforms/Scalar.h>
 #include <llvm-c/Transforms/Utils.h>
+#include <llvm-c/Transforms/Vectorize.h>
 #include "c11/threads.h"
 #include "gallivm/lp_bld_misc.h"
 #include "util/u_math.h"
@@ -175,7 +176,7 @@ static LLVMTargetMachineRef ac_create_target_machine(enum radeon_family family,
 }
 
 static LLVMPassManagerRef ac_create_passmgr(LLVMTargetLibraryInfoRef target_library_info,
-					    bool check_ir)
+					    bool check_ir, enum radeon_family family)
 {
 	LLVMPassManagerRef passmgr = LLVMCreatePassManager();
 	if (!passmgr)
@@ -203,6 +204,9 @@ static LLVMPassManagerRef ac_create_passmgr(LLVMTargetLibraryInfoRef target_libr
 	LLVMAddCFGSimplificationPass(passmgr);
 	/* This is recommended by the instruction combining pass. */
 	LLVMAddEarlyCSEMemSSAPass(passmgr);
+	/* vectorization is disabled on pre-GFX9 because it's not very useful there */
+	if (family >= CHIP_VEGA10)
+		LLVMAddSLPVectorizePass(passmgr);
 	LLVMAddInstructionCombiningPass(passmgr);
 	return passmgr;
 }
@@ -327,7 +331,7 @@ ac_init_llvm_compiler(struct ac_llvm_compiler *compiler,
 		goto fail;
 
 	compiler->passmgr = ac_create_passmgr(compiler->target_library_info,
-					      tm_options & AC_TM_CHECK_IR);
+					      tm_options & AC_TM_CHECK_IR, family);
 	if (!compiler->passmgr)
 		goto fail;
 
