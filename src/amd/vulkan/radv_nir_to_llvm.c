@@ -2305,6 +2305,7 @@ si_llvm_init_export_args(struct radv_shader_context *ctx,
 
 	bool is_16bit = ac_get_type_size(LLVMTypeOf(values[0])) == 2;
 	if (ctx->stage == MESA_SHADER_FRAGMENT) {
+		bool is_16bit = ac_get_type_size(LLVMTypeOf(values[0])) == 2;
 		unsigned index = target - V_008DFC_SQ_EXP_MRT;
 		unsigned col_format = (ctx->options->key.fs.col_format >> (4 * index)) & 0xf;
 		bool is_int8 = (ctx->options->key.fs.is_int8 >> index) & 1;
@@ -2421,16 +2422,8 @@ si_llvm_init_export_args(struct radv_shader_context *ctx,
 		return;
 	}
 
-	if (is_16bit) {
-		for (unsigned chan = 0; chan < 4; chan++) {
-			values[chan] = LLVMBuildBitCast(ctx->ac.builder, values[chan], ctx->ac.i16, "");
-			args->out[chan] = LLVMBuildZExt(ctx->ac.builder, values[chan], ctx->ac.i32, "");
-		}
-	} else
-		memcpy(&args->out[0], values, sizeof(values[0]) * 4);
-
-	for (unsigned i = 0; i < 4; ++i)
-		args->out[i] = ac_to_float(&ctx->ac, args->out[i]);
+	for (unsigned chan = 0; chan < 4; chan++)
+		args->out[chan] = ac_build_reinterpret(&ctx->ac, values[chan], ctx->ac.f32);
 }
 
 static void
@@ -3137,9 +3130,12 @@ handle_fs_outputs_post(struct radv_shader_context *ctx)
 		if (i < FRAG_RESULT_DATA0)
 			continue;
 
-		for (unsigned j = 0; j < 4; j++)
-			values[j] = ac_to_float(&ctx->ac,
-						radv_load_output(ctx, i, j));
+		for (unsigned j = 0; j < 4; j++) {
+			values[j] = radv_load_output(ctx, i, j);
+			unsigned index = ac_llvm_reg_index_soa(i, 0);
+			LLVMTypeRef new_type = ctx->abi.output_types[index];
+			values[j] = ac_build_reinterpret(&ctx->ac, values[j], new_type);
+		}
 
 		bool ret = si_export_mrt_color(ctx, values,
 					       i - FRAG_RESULT_DATA0,

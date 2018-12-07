@@ -2114,7 +2114,10 @@ static LLVMValueRef visit_load_var(struct ac_nir_context *ctx,
 		unreachable("unhandle variable mode");
 	}
 	ret = ac_build_varying_gather_values(&ctx->ac, values, ve, comp);
-	return LLVMBuildBitCast(ctx->ac.builder, ret, get_def_type(ctx, &instr->dest.ssa), "");
+	if (instr->dest.ssa.bit_size == 16)
+		return ac_build_reinterpret(&ctx->ac, ret, get_def_type(ctx, &instr->dest.ssa));
+	else
+		return LLVMBuildBitCast(ctx->ac.builder, ret, get_def_type(ctx, &instr->dest.ssa), "");
 }
 
 static void
@@ -2151,6 +2154,11 @@ visit_store_var(struct ac_nir_context *ctx,
 	}
 
 	writemask = writemask << comp;
+
+	LLVMTypeRef type = ctx->ac.f32;
+	if (LLVMGetTypeKind(LLVMTypeOf(src)) == LLVMVectorTypeKind)
+		type = LLVMVectorType(ctx->ac.f32, LLVMGetVectorSize(LLVMTypeOf(src)));
+	src = ac_build_reinterpret(&ctx->ac, src, type);
 
 	switch (deref->mode) {
 	case nir_var_shader_out:
@@ -4329,12 +4337,10 @@ ac_handle_shader_output_decl(struct ac_llvm_context *ctx,
 		}
 	}
 
-	bool is_16bit = glsl_type_is_16bit(glsl_without_array(variable->type));
-	LLVMTypeRef type = is_16bit ? ctx->f16 : ctx->f32;
 	for (unsigned i = 0; i < attrib_count; ++i) {
 		for (unsigned chan = 0; chan < 4; chan++) {
 			abi->outputs[ac_llvm_reg_index_soa(output_loc + i, chan)] =
-		                       ac_build_alloca_undef(ctx, type, "");
+		                       ac_build_alloca_undef(ctx, ctx->f32, "");
 		}
 	}
 
