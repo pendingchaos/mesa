@@ -318,6 +318,27 @@ meta_emit_blit(struct radv_cmd_buffer *cmd_buffer,
 
 	assert(src_image->info.samples == dest_image->info.samples);
 
+	/*if (dest_box.offset.x == MIN2(src_offset_0.x, src_offset_1.x) &&
+	    dest_box.offset.y == MIN2(src_offset_0.y, src_offset_1.y) &&
+	    dest_box.extent.width == dst_width && dest_box.extent.height == dst_height &&
+	    dst_width == src_width && dst_height == src_height &&
+	    abs(src_offset_0.x - src_offset_1.x) == src_width &&
+	    abs(src_offset_0.y - src_offset_1.y) == src_height &&
+	    src_iview->aspect_mask & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) {
+		uint32_t dst_queue_mask = radv_image_queue_family_mask(dest_image,
+								       cmd_buffer->queue_family_index,
+								       cmd_buffer->queue_family_index);
+		bool dst_htile = radv_layout_is_htile_compressed(dest_image, dest_image_layout, dst_queue_mask);
+		uint32_t src_queue_mask = radv_image_queue_family_mask(src_image,
+								       cmd_buffer->queue_family_index,
+								       cmd_buffer->queue_family_index);
+		bool src_htile = radv_layout_is_htile_compressed(src_image, src_image_layout, src_queue_mask);
+		printf("potential dbcb blit of size %dx%d (%s) (%s%s)!\n", src_width, src_height,
+		       (src_htile && dst_htile) ? "htile loss" : "fine",
+		       src_iview->aspect_mask & VK_IMAGE_ASPECT_DEPTH_BIT ? "depth" : "",
+		       src_iview->aspect_mask & VK_IMAGE_ASPECT_STENCIL_BIT ? "stencil" : "");
+	}*/
+
 	float vertex_push_constants[5] = {
 		(float)src_offset_0.x / (float)src_width,
 		(float)src_offset_0.y / (float)src_height,

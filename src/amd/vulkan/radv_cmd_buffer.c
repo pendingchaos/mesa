@@ -4225,10 +4225,10 @@ void radv_CmdEndRenderPass2KHR(
  *   0xfffffff0: Clear depth to 1.0
  *   0x00000000: Clear depth to 0.0
  */
-static void radv_initialize_htile(struct radv_cmd_buffer *cmd_buffer,
-                                  struct radv_image *image,
-                                  const VkImageSubresourceRange *range,
-                                  uint32_t clear_word)
+void radv_initialize_htile(struct radv_cmd_buffer *cmd_buffer,
+                           struct radv_image *image,
+                           const VkImageSubresourceRange *range,
+                           uint32_t clear_word)
 {
 	assert(range->baseMipLevel == 0);
 	assert(range->levelCount == 1 || range->levelCount == VK_REMAINING_ARRAY_LAYERS);

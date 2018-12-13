@@ -498,6 +498,20 @@ struct radv_meta_state {
 		VkPipeline stencil_only_pipeline[5];
 	} blit2d[1 + MAX_SAMPLES_LOG2];
 
+	struct {
+		VkPipelineLayout p_layout;
+		VkRenderPass depth_only_renderpass[RADV_BLIT_DS_LAYOUT_COUNT];
+		VkRenderPass stencil_only_renderpass[RADV_BLIT_DS_LAYOUT_COUNT];
+		VkRenderPass depthstencil_renderpass[RADV_BLIT_DS_LAYOUT_COUNT];
+		VkPipeline depth_only_pipeline[RADV_BLIT_DS_LAYOUT_COUNT];
+		VkPipeline stencil_only_pipeline[RADV_BLIT_DS_LAYOUT_COUNT];
+		VkPipeline depthstencil_pipeline[RADV_BLIT_DS_LAYOUT_COUNT];
+	} blit2d_dbcb;
+
+	VkPipeline htile_copy_pipeline;
+	VkPipelineLayout htile_copy_p_layout;
+	VkDescriptorSetLayout htile_copy_ds_layout;
+
 	VkRenderPass blit2d_render_passes[NUM_META_FS_KEYS][RADV_META_DST_LAYOUT_COUNT];
 	VkRenderPass blit2d_depth_only_rp[RADV_BLIT_DS_LAYOUT_COUNT];
 	VkRenderPass blit2d_stencil_only_rp[RADV_BLIT_DS_LAYOUT_COUNT];
@@ -1412,6 +1426,8 @@ struct radv_graphics_pipeline_create_info {
 	bool use_rectlist;
 	bool db_depth_clear;
 	bool db_stencil_clear;
+	bool db_depth_copy;
+	bool db_stencil_copy;
 	bool db_depth_disable_expclear;
 	bool db_stencil_disable_expclear;
 	bool db_flush_depth_inplace;
@@ -1887,6 +1903,11 @@ void radv_meta_push_descriptor_set(struct radv_cmd_buffer *cmd_buffer,
                                    uint32_t set,
                                    uint32_t descriptorWriteCount,
                                    const VkWriteDescriptorSet *pDescriptorWrites);
+
+void radv_initialize_htile(struct radv_cmd_buffer *cmd_buffer,
+                           struct radv_image *image,
+                           const VkImageSubresourceRange *range,
+                           uint32_t clear_word);
 
 void radv_initialize_dcc(struct radv_cmd_buffer *cmd_buffer,
 			 struct radv_image *image, uint32_t value);

@@ -483,6 +483,7 @@ static unsigned si_choose_spi_color_format(VkFormat vk_format,
 		break;
 
 	default:
+	    printf("%d %d\n", format, vk_format); //VK_FORMAT_D32_SFLOAT_S8_UINT
 		unreachable("unhandled blend format");
 	}
 
@@ -2625,6 +2626,11 @@ radv_pipeline_generate_depth_stencil_state(struct radeon_cmdbuf *cs,
 	if (attachment && extra) {
 		db_render_control |= S_028000_DEPTH_CLEAR_ENABLE(extra->db_depth_clear);
 		db_render_control |= S_028000_STENCIL_CLEAR_ENABLE(extra->db_stencil_clear);
+
+		db_render_control |= S_028000_DEPTH_COPY(extra->db_depth_copy);
+		db_render_control |= S_028000_STENCIL_COPY(extra->db_stencil_copy);
+		if (extra->db_depth_copy || extra->db_stencil_copy)
+			db_render_control |= S_028000_COPY_CENTROID(1);
 
 		db_render_control |= S_028000_RESUMMARIZE_ENABLE(extra->db_resummarize);
 		db_render_control |= S_028000_DEPTH_COMPRESS_DISABLE(extra->db_flush_depth_inplace);

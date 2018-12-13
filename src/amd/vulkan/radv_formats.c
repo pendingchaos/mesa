@@ -772,6 +772,8 @@ uint32_t radv_translate_colorformat(VkFormat format)
 			return V_028C70_COLOR_24_8;
 		} else if (HAS_SIZE(24,8,0,0)) {
 			return V_028C70_COLOR_8_24;
+		} else if (HAS_SIZE(32,8,0,0)) {
+			return V_028C70_COLOR_X24_8_32_FLOAT; //TODO(pendingchaos): correct?
 		}
 		break;
 	case 3:
