@@ -1080,6 +1080,24 @@ enum radv_cmd_buffer_status {
 	RADV_CMD_BUFFER_STATUS_PENDING,
 };
 
+#define RADV_NUM_TRACKED_REG ((SI_CONTEXT_REG_END - SI_CONTEXT_REG_OFFSET) / 4)
+
+struct radv_tracked_ctx_regs {
+	bool potential_context_roll;
+	bool potential_pipeline_context_roll;
+	bool pipeline_context_roll;
+	bool context_roll;
+
+	bool do_scissor_workaround;
+	bool allow_redundance;
+	uint32_t vals[RADV_NUM_TRACKED_REG];
+	uint64_t set_mask[(RADV_NUM_TRACKED_REG + 63) / 64];
+	uint32_t seq_reg;
+	uint32_t seq_count;
+	uint32_t seq_done;
+	uint32_t *seq_buf;
+};
+
 struct radv_cmd_buffer {
 	VK_LOADER_DATA                               _loader_data;
 
@@ -1123,7 +1141,16 @@ struct radv_cmd_buffer {
 	 * Whether a query pool has been resetted and we have to flush caches.
 	 */
 	bool pending_reset_query;
+
+	struct radv_tracked_ctx_regs ctx_regs;
 };
+
+void radv_dirty_tracked_regs(struct radv_cmd_buffer *cmd_buffer, uint32_t reg, uint32_t count);
+bool radv_set_tracked_reg_seq(struct radv_cmd_buffer *cmd_buffer, uint32_t reg, uint32_t count, uint32_t *vals);
+bool radv_set_tracked_reg(struct radv_cmd_buffer *cmd_buffer, uint32_t reg, uint32_t val);
+void radv_tracked_reg_begin(struct radv_cmd_buffer *cmd_buffer, uint32_t reg, uint32_t count);
+void radv_tracked_reg_emit(struct radv_cmd_buffer *cmd_buffer, uint32_t val);
+bool radv_tracked_reg_end(struct radv_cmd_buffer *cmd_buffer);
 
 struct radv_image;
 
@@ -1136,9 +1163,9 @@ void si_emit_compute(struct radv_physical_device *physical_device,
 
 void cik_create_gfx_config(struct radv_device *device);
 
-void si_write_viewport(struct radeon_cmdbuf *cs, int first_vp,
+void si_write_viewport(struct radv_cmd_buffer *cmd_buffer, int first_vp,
 		       int count, const VkViewport *viewports);
-void si_write_scissors(struct radeon_cmdbuf *cs, int first,
+void si_write_scissors(struct radv_cmd_buffer *cmd_buffer, int first,
 		       int count, const VkRect2D *scissors,
 		       const VkViewport *viewports, bool can_use_guardband);
 uint32_t si_get_ia_multi_vgt_param(struct radv_cmd_buffer *cmd_buffer,
@@ -1365,6 +1392,9 @@ struct radv_pipeline {
 	VkShaderStageFlags                           active_stages;
 
 	struct radeon_cmdbuf                      cs;
+	uint32_t context_regs_size;
+	uint32_t context_regs_capacity;
+	uint32_t *context_regs;
 
 	struct radv_vertex_elements_info             vertex_elements;
 

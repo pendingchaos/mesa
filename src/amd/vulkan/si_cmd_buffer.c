@@ -438,13 +438,13 @@ get_viewport_xform(const VkViewport *viewport,
 }
 
 void
-si_write_viewport(struct radeon_cmdbuf *cs, int first_vp,
+si_write_viewport(struct radv_cmd_buffer *cmd_buffer, int first_vp,
                   int count, const VkViewport *viewports)
 {
 	int i;
 
 	assert(count);
-	radeon_set_context_reg_seq(cs, R_02843C_PA_CL_VPORT_XSCALE +
+	radv_tracked_reg_begin(cmd_buffer, R_02843C_PA_CL_VPORT_XSCALE +
 				   first_vp * 4 * 6, count * 6);
 
 	for (i = 0; i < count; i++) {
@@ -452,22 +452,24 @@ si_write_viewport(struct radeon_cmdbuf *cs, int first_vp,
 
 
 		get_viewport_xform(&viewports[i], scale, translate);
-		radeon_emit(cs, fui(scale[0]));
-		radeon_emit(cs, fui(translate[0]));
-		radeon_emit(cs, fui(scale[1]));
-		radeon_emit(cs, fui(translate[1]));
-		radeon_emit(cs, fui(scale[2]));
-		radeon_emit(cs, fui(translate[2]));
+		radv_tracked_reg_emit(cmd_buffer, fui(scale[0]));
+		radv_tracked_reg_emit(cmd_buffer, fui(translate[0]));
+		radv_tracked_reg_emit(cmd_buffer, fui(scale[1]));
+		radv_tracked_reg_emit(cmd_buffer, fui(translate[1]));
+		radv_tracked_reg_emit(cmd_buffer, fui(scale[2]));
+		radv_tracked_reg_emit(cmd_buffer, fui(translate[2]));
 	}
+	radv_tracked_reg_end(cmd_buffer);
 
-	radeon_set_context_reg_seq(cs, R_0282D0_PA_SC_VPORT_ZMIN_0 +
+	radv_tracked_reg_begin(cmd_buffer, R_0282D0_PA_SC_VPORT_ZMIN_0 +
 				   first_vp * 4 * 2, count * 2);
 	for (i = 0; i < count; i++) {
 		float zmin = MIN2(viewports[i].minDepth, viewports[i].maxDepth);
 		float zmax = MAX2(viewports[i].minDepth, viewports[i].maxDepth);
-		radeon_emit(cs, fui(zmin));
-		radeon_emit(cs, fui(zmax));
+		radv_tracked_reg_emit(cmd_buffer, fui(zmin));
+		radv_tracked_reg_emit(cmd_buffer, fui(zmax));
 	}
+	radv_tracked_reg_end(cmd_buffer);
 }
 
 static VkRect2D si_scissor_from_viewport(const VkViewport *viewport)
@@ -497,7 +499,7 @@ static VkRect2D si_intersect_scissor(const VkRect2D *a, const VkRect2D *b) {
 }
 
 void
-si_write_scissors(struct radeon_cmdbuf *cs, int first,
+si_write_scissors(struct radv_cmd_buffer *cmd_buffer, int first,
                   int count, const VkRect2D *scissors,
                   const VkViewport *viewports, bool can_use_guardband)
 {
@@ -507,7 +509,7 @@ si_write_scissors(struct radeon_cmdbuf *cs, int first,
 	if (!count)
 		return;
 
-	radeon_set_context_reg_seq(cs, R_028250_PA_SC_VPORT_SCISSOR_0_TL + first * 4 * 2, count * 2);
+	radv_tracked_reg_begin(cmd_buffer, R_028250_PA_SC_VPORT_SCISSOR_0_TL + first * 4 * 2, count * 2);
 	for (i = 0; i < count; i++) {
 		VkRect2D viewport_scissor = si_scissor_from_viewport(viewports + i);
 		VkRect2D scissor = si_intersect_scissor(&scissors[i], &viewport_scissor);
@@ -524,22 +526,24 @@ si_write_scissors(struct radeon_cmdbuf *cs, int first,
 		guardband_x = MIN2(guardband_x, (max_range - fabsf(translate[0])) / scale[0]);
 		guardband_y = MIN2(guardband_y, (max_range - fabsf(translate[1])) / scale[1]);
 
-		radeon_emit(cs, S_028250_TL_X(scissor.offset.x) |
+		radv_tracked_reg_emit(cmd_buffer, S_028250_TL_X(scissor.offset.x) |
 			    S_028250_TL_Y(scissor.offset.y) |
 			    S_028250_WINDOW_OFFSET_DISABLE(1));
-		radeon_emit(cs, S_028254_BR_X(scissor.offset.x + scissor.extent.width) |
+		radv_tracked_reg_emit(cmd_buffer, S_028254_BR_X(scissor.offset.x + scissor.extent.width) |
 			    S_028254_BR_Y(scissor.offset.y + scissor.extent.height));
 	}
+	radv_tracked_reg_end(cmd_buffer);
 	if (!can_use_guardband) {
 		guardband_x = 1.0;
 		guardband_y = 1.0;
 	}
 
-	radeon_set_context_reg_seq(cs, R_028BE8_PA_CL_GB_VERT_CLIP_ADJ, 4);
-	radeon_emit(cs, fui(guardband_y));
-	radeon_emit(cs, fui(1.0));
-	radeon_emit(cs, fui(guardband_x));
-	radeon_emit(cs, fui(1.0));
+	radv_tracked_reg_begin(cmd_buffer, R_028BE8_PA_CL_GB_VERT_CLIP_ADJ, 4);
+	radv_tracked_reg_emit(cmd_buffer, fui(guardband_y));
+	radv_tracked_reg_emit(cmd_buffer, fui(1.0));
+	radv_tracked_reg_emit(cmd_buffer, fui(guardband_x));
+	radv_tracked_reg_emit(cmd_buffer, fui(1.0));
+	radv_tracked_reg_end(cmd_buffer);
 }
 
 static inline unsigned

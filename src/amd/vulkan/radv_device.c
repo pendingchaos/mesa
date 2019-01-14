@@ -464,6 +464,7 @@ static const struct debug_control radv_perftest_options[] = {
 	{"sisched", RADV_PERFTEST_SISCHED},
 	{"localbos", RADV_PERFTEST_LOCAL_BOS},
 	{"dccmsaa", RADV_PERFTEST_DCC_MSAA},
+	{"ctxtracking", RADV_PERFTEST_CONTEXT_TRACKING},
 	{NULL, 0}
 };
 
