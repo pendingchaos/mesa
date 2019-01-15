@@ -3145,6 +3145,8 @@ void radv_CmdBindPipeline(
 	}
 }
 
+#define DO_SKIP return //remove return to try without skipping
+
 void radv_CmdSetViewport(
 	VkCommandBuffer                             commandBuffer,
 	uint32_t                                    firstViewport,
@@ -3157,6 +3159,10 @@ void radv_CmdSetViewport(
 
 	assert(firstViewport < MAX_VIEWPORTS);
 	assert(total_count >= 1 && total_count <= MAX_VIEWPORTS);
+
+	if (!memcmp(state->dynamic.viewport.viewports + firstViewport, pViewports, viewportCount * sizeof(*pViewports))) {
+		DO_SKIP;
+	}
 
 	memcpy(state->dynamic.viewport.viewports + firstViewport, pViewports,
 	       viewportCount * sizeof(*pViewports));
@@ -3177,9 +3183,8 @@ void radv_CmdSetScissor(
 	assert(firstScissor < MAX_SCISSORS);
 	assert(total_count >= 1 && total_count <= MAX_SCISSORS);
 
-	if (memcmp(state->dynamic.scissor.scissors + firstScissor,
-		   pScissors, scissorCount * sizeof(*pScissors)) == 0) {
-		return;
+	if (!memcmp(state->dynamic.scissor.scissors + firstScissor, pScissors, scissorCount * sizeof(*pScissors))) {
+		DO_SKIP;
 	}
 
 	memcpy(state->dynamic.scissor.scissors + firstScissor, pScissors,
@@ -3193,6 +3198,9 @@ void radv_CmdSetLineWidth(
 	float                                       lineWidth)
 {
 	RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, commandBuffer);
+	if (cmd_buffer->state.dynamic.line_width == lineWidth) {
+		DO_SKIP;
+	}
 	cmd_buffer->state.dynamic.line_width = lineWidth;
 	cmd_buffer->state.dirty |= RADV_CMD_DIRTY_DYNAMIC_LINE_WIDTH;
 }
@@ -3205,6 +3213,11 @@ void radv_CmdSetDepthBias(
 {
 	RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, commandBuffer);
 
+	if (cmd_buffer->state.dynamic.depth_bias.bias == depthBiasConstantFactor &&
+	    cmd_buffer->state.dynamic.depth_bias.clamp == depthBiasClamp &&
+	    cmd_buffer->state.dynamic.depth_bias.slope == depthBiasSlopeFactor) {
+		DO_SKIP;
+	}
 	cmd_buffer->state.dynamic.depth_bias.bias = depthBiasConstantFactor;
 	cmd_buffer->state.dynamic.depth_bias.clamp = depthBiasClamp;
 	cmd_buffer->state.dynamic.depth_bias.slope = depthBiasSlopeFactor;
@@ -3217,6 +3230,10 @@ void radv_CmdSetBlendConstants(
 	const float                                 blendConstants[4])
 {
 	RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, commandBuffer);
+
+	if (!memcmp(cmd_buffer->state.dynamic.blend_constants, blendConstants, sizeof(float) * 4)) {
+		DO_SKIP;
+	}
 
 	memcpy(cmd_buffer->state.dynamic.blend_constants,
 	       blendConstants, sizeof(float) * 4);
@@ -3231,6 +3248,10 @@ void radv_CmdSetDepthBounds(
 {
 	RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, commandBuffer);
 
+	if (cmd_buffer->state.dynamic.depth_bounds.min == minDepthBounds &&
+	    cmd_buffer->state.dynamic.depth_bounds.max == maxDepthBounds) {
+		DO_SKIP;
+	}
 	cmd_buffer->state.dynamic.depth_bounds.min = minDepthBounds;
 	cmd_buffer->state.dynamic.depth_bounds.max = maxDepthBounds;
 
@@ -3244,6 +3265,10 @@ void radv_CmdSetStencilCompareMask(
 {
 	RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, commandBuffer);
 
+	if ((!(faceMask & VK_STENCIL_FACE_FRONT_BIT) || cmd_buffer->state.dynamic.stencil_compare_mask.front == compareMask) &&
+	    (!(faceMask & VK_STENCIL_FACE_BACK_BIT) || cmd_buffer->state.dynamic.stencil_compare_mask.back == compareMask)) {
+		DO_SKIP;
+	}
 	if (faceMask & VK_STENCIL_FACE_FRONT_BIT)
 		cmd_buffer->state.dynamic.stencil_compare_mask.front = compareMask;
 	if (faceMask & VK_STENCIL_FACE_BACK_BIT)
@@ -3259,6 +3284,10 @@ void radv_CmdSetStencilWriteMask(
 {
 	RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, commandBuffer);
 
+	if ((!(faceMask & VK_STENCIL_FACE_FRONT_BIT) || cmd_buffer->state.dynamic.stencil_write_mask.front == writeMask) &&
+	    (!(faceMask & VK_STENCIL_FACE_BACK_BIT) || cmd_buffer->state.dynamic.stencil_write_mask.back == writeMask)) {
+		DO_SKIP;
+	}
 	if (faceMask & VK_STENCIL_FACE_FRONT_BIT)
 		cmd_buffer->state.dynamic.stencil_write_mask.front = writeMask;
 	if (faceMask & VK_STENCIL_FACE_BACK_BIT)
@@ -3274,6 +3303,10 @@ void radv_CmdSetStencilReference(
 {
 	RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, commandBuffer);
 
+	if ((!(faceMask & VK_STENCIL_FACE_FRONT_BIT) || cmd_buffer->state.dynamic.stencil_reference.front == reference) &&
+	    (!(faceMask & VK_STENCIL_FACE_BACK_BIT) || cmd_buffer->state.dynamic.stencil_reference.back == reference)) {
+		DO_SKIP;
+	}
 	if (faceMask & VK_STENCIL_FACE_FRONT_BIT)
 		cmd_buffer->state.dynamic.stencil_reference.front = reference;
 	if (faceMask & VK_STENCIL_FACE_BACK_BIT)
@@ -3294,6 +3327,10 @@ void radv_CmdSetDiscardRectangleEXT(
 
 	assert(firstDiscardRectangle < MAX_DISCARD_RECTANGLES);
 	assert(total_count >= 1 && total_count <= MAX_DISCARD_RECTANGLES);
+
+	if (!memcmp(state->dynamic.discard_rectangle.rectangles + firstDiscardRectangle, pDiscardRectangles, discardRectangleCount * sizeof(*pDiscardRectangles))) {
+		DO_SKIP;
+	}
 
 	typed_memcpy(&state->dynamic.discard_rectangle.rectangles[firstDiscardRectangle],
 	             pDiscardRectangles, discardRectangleCount);
