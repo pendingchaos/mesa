@@ -2474,13 +2474,21 @@ void visit_load_input(isel_context *ctx, nir_intrinsic_instr *instr)
    Temp dst = get_ssa_temp(ctx, &instr->dest.ssa);
    if (ctx->stage == MESA_SHADER_VERTEX) {
 
+      nir_instr *off_instr = instr->src[0].ssa->parent_instr;
+      if (off_instr->type != nir_instr_type_load_const) {
+         fprintf(stderr, "Unimplemented nir_intrinsic_load_input offset\n");
+         nir_print_instr(off_instr, stderr);
+         fprintf(stderr, "\n");
+      }
+      uint32_t offset = nir_instr_as_load_const(off_instr)->value.u32[0];
+
       Temp vertex_buffers = ctx->vertex_buffers;
       if (vertex_buffers.size() == 1) {
          vertex_buffers = convert_pointer_to_64_bit(ctx, vertex_buffers);
          ctx->vertex_buffers = vertex_buffers;
       }
 
-      unsigned location = nir_intrinsic_base(instr) / 4 - VERT_ATTRIB_GENERIC0;
+      unsigned location = nir_intrinsic_base(instr) / 4 - VERT_ATTRIB_GENERIC0 + offset;
       aco_ptr<Instruction> load;
       load.reset(create_instruction<SMEM_instruction>(aco_opcode::s_load_dwordx4, Format::SMEM, 2, 1));
       load->getOperand(0) = Operand(vertex_buffers);
@@ -2549,6 +2557,14 @@ void visit_load_input(isel_context *ctx, nir_intrinsic_instr *instr)
       }
 
    } else if (ctx->stage == MESA_SHADER_FRAGMENT) {
+      nir_instr *off_instr = instr->src[0].ssa->parent_instr;
+      if (off_instr->type != nir_instr_type_load_const ||
+          nir_instr_as_load_const(off_instr)->value.u32[0] != 0) {
+         fprintf(stderr, "Unimplemented nir_intrinsic_load_input offset\n");
+         nir_print_instr(off_instr, stderr);
+         fprintf(stderr, "\n");
+      }
+
       unsigned base = nir_intrinsic_base(instr) / 4;
       unsigned idx = util_bitcount64(ctx->input_mask & ((1ull << base) - 1ull));
       unsigned component = nir_intrinsic_component(instr);
