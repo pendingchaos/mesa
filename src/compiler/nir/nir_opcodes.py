@@ -785,16 +785,13 @@ opcode("b32csel", 0, tuint, [0, 0, 0],
        [tbool32, tuint, tuint], "", "src0 ? src1 : src2")
 
 # SM5 bfi assembly
-triop("bfi", tuint32, """
-unsigned mask = src0, insert = src1, base = src2;
+opcode("bfi", 0, tuint32, [0, 0, 0, 0],
+      [tuint32, tuint32, tuint32, tuint32], "", """
+unsigned mask = src0, insert = src1, base = src2, offset=src3;
 if (mask == 0) {
    dst = base;
 } else {
-   unsigned tmp = mask;
-   while (!(tmp & 1)) {
-      tmp >>= 1;
-      insert <<= 1;
-   }
+   insert = insert << offset;
    dst = (base & ~mask) | (insert & mask);
 }
 """)

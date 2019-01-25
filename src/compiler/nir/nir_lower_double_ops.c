@@ -47,7 +47,7 @@ set_exponent(nir_builder *b, nir_ssa_def *src, nir_ssa_def *exp)
    /* The exponent is bits 52-62, or 20-30 of the high word, so set the exponent
     * to 1023
     */
-   nir_ssa_def *new_hi = nir_bfi(b, nir_imm_int(b, 0x7ff00000), exp, hi);
+   nir_ssa_def *new_hi = nir_bfi(b, nir_imm_int(b, 0x7ff00000), exp, hi, nir_imm_int(b, 0x14 /* 20 */));
    /* recombine */
    return nir_pack_64_2x32_split(b, lo, new_hi);
 }

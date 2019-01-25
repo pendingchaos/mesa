@@ -649,7 +649,7 @@ optimizations = [
 
    (('bitfield_insert', 'base', 'insert', 'offset', 'bits'),
     ('bcsel', ('ult', 31, 'bits'), 'insert',
-              ('bfi', ('bfm', 'bits', 'offset'), 'insert', 'base')),
+              ('bfi', ('bfm', 'bits', 'offset'), 'insert', 'base', 'offset')),
     'options->lower_bitfield_insert'),
 
    # Alternative lowering that doesn't rely on bfi.
