@@ -1700,6 +1700,7 @@ void visit_alu_instr(isel_context *ctx, nir_alu_instr *instr)
          bfe->getOperand(0) = Operand(base);
          bfe->getOperand(1) = Operand(offset);
          bfe->getOperand(2) = Operand(bits);
+         bfe->getDefinition(0) = Definition(dst);
          ctx->block->instructions.emplace_back(std::move(bfe));
 
       } else {
