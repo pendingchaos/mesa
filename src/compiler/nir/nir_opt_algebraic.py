@@ -648,26 +648,32 @@ optimizations = [
    (('usub_borrow@32', a, b), ('b2i', ('ult', a, b)), 'options->lower_usub_borrow'),
 
    (('bitfield_insert', 'base', 'insert', 'offset', 'bits'),
-    ('bcsel', ('ilt', 31, 'bits'), 'insert',
+    ('bcsel', ('ult', 31, 'bits'), 'insert',
               ('bfi', ('bfm', 'bits', 'offset'), 'insert', 'base')),
     'options->lower_bitfield_insert'),
 
    # Alternative lowering that doesn't rely on bfi.
    (('bitfield_insert', 'base', 'insert', 'offset', 'bits'),
-    ('bcsel', ('ilt', 31, 'bits'),
+    ('bcsel', ('ult', 31, 'bits'),
      'insert',
      ('ior',
       ('iand', 'base', ('inot', ('bfm', 'bits', 'offset'))),
       ('iand', ('ishl', 'insert', 'offset'), ('bfm', 'bits', 'offset')))),
     'options->lower_bitfield_insert_to_shifts'),
 
-   # bfm lowering -- note that the NIR opcode is undefined if either arg is 32.
+   # bfm optimizations -- note that the NIR opcode is undefined if either arg is 32.
+   (('bfm', ('iand', 31, 'bits'), 'offset'), ('bfm', 'bits', 'offset')),
+   (('bfm', 'bits', ('iand', 31, 'offset')), ('bfm', 'bits', 'offset')),
+   (('bfm', '#bits', 'offset'),
+    ('ishl', ('isub', ('ishl', 1, '#bits'), 1), 'offset')),
+
+   # bfm lowering
    (('bfm', 'bits', 'offset'),
     ('ishl', ('isub', ('ishl', 1, 'bits'), 1), 'offset'),
     'options->lower_bfm'),
 
    (('ibitfield_extract', 'value', 'offset', 'bits'),
-    ('bcsel', ('ilt', 31, 'bits'), 'value',
+    ('bcsel', ('ult', 31, 'bits'), 'value',
               ('ibfe', 'value', 'offset', 'bits')),
     'options->lower_bitfield_extract'),
 
@@ -675,6 +681,11 @@ optimizations = [
     ('bcsel', ('ult', 31, 'bits'), 'value',
               ('ubfe', 'value', 'offset', 'bits')),
     'options->lower_bitfield_extract'),
+
+   (('ubfe', 'value', 'offset', ('iand', 31, 'bits')), ('ubfe', 'value', 'offset', 'bits')),
+   (('ibfe', 'value', 'offset', ('iand', 31, 'bits')), ('ibfe', 'value', 'offset', 'bits')),
+   (('ubfe', 'value', ('iand', 31, 'offset'), 'bits'), ('ubfe', 'value', 'offset', 'bits')),
+   (('ibfe', 'value', ('iand', 31, 'offset'), 'bits'), ('ibfe', 'value', 'offset', 'bits')),
 
    (('ibitfield_extract', 'value', 'offset', 'bits'),
     ('bcsel', ('ieq', 0, 'bits'),
