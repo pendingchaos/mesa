@@ -60,6 +60,7 @@ static const struct nir_shader_compiler_options nir_options = {
 	.lower_device_index_to_zero = true,
 	.lower_fsat = false,
 	.lower_fdiv = true,
+	.lower_bitfield_insert = true,
 	.lower_sub = false,
 	.lower_pack_snorm_2x16 = true,
 	.lower_pack_snorm_4x8 = true,
@@ -618,7 +619,7 @@ static void radv_init_llvm_once(void)
 }
 #include <time.h>
 #define NANOS 1000000000LL
-#define ACO_COMPILE_TIME 0
+#define ACO_COMPILE_TIME 1
 static double total_llvm = 0;
 static double total_aco = 0;
 static unsigned num = 0;

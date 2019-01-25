@@ -486,6 +486,7 @@ static const struct nir_shader_compiler_options nir_options = {
 	.lower_fpow = true,
 	.lower_fsat = true,
 	.lower_fdiv = true,
+	.lower_bitfield_insert = true,
 	.lower_sub = true,
 	.lower_ffma = true,
 	.lower_pack_snorm_2x16 = true,
