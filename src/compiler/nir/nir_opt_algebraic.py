@@ -687,7 +687,7 @@ optimizations = [
    (('usub_borrow@32', a, b), ('b2i', ('ult', a, b)), 'options->lower_usub_borrow'),
 
    (('bitfield_insert', 'base', 'insert', 'offset', 'bits'),
-    ('bcsel', ('ilt', 31, 'bits'), 'insert',
+    ('bcsel', ('ult', 31, 'bits'), 'insert',
               ('bfi', ('bfm', 'bits', 'offset'), 'insert', 'base')),
     'options->lower_bitfield_insert'),
    (('ihadd', a, b), ('iadd', ('iand', a, b), ('ishr', ('ixor', a, b), 1)), 'options->lower_hadd'),
@@ -705,7 +705,7 @@ optimizations = [
     'options->lower_bitfield_insert_to_shifts'),
 
    (('ibitfield_extract', 'value', 'offset', 'bits'),
-    ('bcsel', ('ilt', 31, 'bits'), 'value',
+    ('bcsel', ('ult', 31, 'bits'), 'value',
               ('ibfe', 'value', 'offset', 'bits')),
     'options->lower_bitfield_extract'),
 
@@ -713,6 +713,14 @@ optimizations = [
     ('bcsel', ('ult', 31, 'bits'), 'value',
               ('ubfe', 'value', 'offset', 'bits')),
     'options->lower_bitfield_extract'),
+
+   # Note that these opcodes are defined to only use the five least significant bits of 'offset' and 'bits'
+   (('ubfe', 'value', 'offset', ('iand', 31, 'bits')), ('ubfe', 'value', 'offset', 'bits')),
+   (('ubfe', 'value', ('iand', 31, 'offset'), 'bits'), ('ubfe', 'value', 'offset', 'bits')),
+   (('ibfe', 'value', 'offset', ('iand', 31, 'bits')), ('ibfe', 'value', 'offset', 'bits')),
+   (('ibfe', 'value', ('iand', 31, 'offset'), 'bits'), ('ibfe', 'value', 'offset', 'bits')),
+   (('bfm', 'bits', ('iand', 31, 'offset')), ('bfm', 'bits', 'offset')),
+   (('bfm', ('iand', 31, 'bits'), 'offset'), ('bfm', 'bits', 'offset')),
 
    (('ibitfield_extract', 'value', 'offset', 'bits'),
     ('bcsel', ('ieq', 0, 'bits'),
