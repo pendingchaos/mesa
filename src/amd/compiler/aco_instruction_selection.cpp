@@ -1451,44 +1451,40 @@ void visit_alu_instr(isel_context *ctx, nir_alu_instr *instr)
       }
       break;
    }
-   case nir_op_bitfield_insert: {
-      Temp base = get_alu_src(ctx, instr->src[0]);
-      Temp insert = get_alu_src(ctx, instr->src[1]);
-      Temp offset = get_alu_src(ctx, instr->src[2]);
-      Temp bits = get_alu_src(ctx, instr->src[3]);
+   case nir_op_bfm: {
+      Temp bits = get_alu_src(ctx, instr->src[0]);
+      Temp offset = get_alu_src(ctx, instr->src[1]);
 
-      /* calculate bitmask */
-      Operand bitmask;
-      if (offset.type() == sgpr && bits.type() == sgpr) {
-         nir_const_value* const_offset = nir_src_as_const_value(instr->src[2].src);
-         nir_const_value* const_bits = nir_src_as_const_value(instr->src[3].src);
-         if (const_offset && const_bits) {
-            uint32_t const_bitmask = ((1 << const_bits->u32[0]) - 1) << const_offset->u32[0];
-            bitmask = Operand(const_bitmask);
-         } else {
-            aco_ptr<Instruction> bfm{create_instruction<SOP2_instruction>(aco_opcode::s_bfm_b32, Format::SOP2, 2, 1)};
-            bfm->getOperand(0) = Operand(bits);
-            bfm->getOperand(1) = Operand(offset);
-            Temp tmp = {ctx->program->allocateId(), s1};
-            bfm->getDefinition(0) = Definition(tmp);
-            ctx->block->instructions.emplace_back(std::move(bfm));
-            bitmask = Operand(tmp);
-         }
-      } else {
+      if (dst.regClass() == s1) {
+         aco_ptr<Instruction> bfm{create_instruction<SOP2_instruction>(aco_opcode::s_bfm_b32, Format::SOP2, 2, 1)};
+         bfm->getOperand(0) = Operand(bits);
+         bfm->getOperand(1) = Operand(offset);
+         bfm->getDefinition(0) = Definition(dst);
+         ctx->block->instructions.emplace_back(std::move(bfm));
+      } else if (dst.regClass() == v1) {
          aco_ptr<Instruction> bfm{create_instruction<VOP3A_instruction>(aco_opcode::v_bfm_b32, Format::VOP3A, 2, 1)};
          bfm->getOperand(0) = Operand(bits);
          bfm->getOperand(1) = Operand(offset);
-         Temp tmp = {ctx->program->allocateId(), v1};
-         bfm->getDefinition(0) = Definition(tmp);
+         bfm->getDefinition(0) = Definition(dst);
          ctx->block->instructions.emplace_back(std::move(bfm));
-         bitmask = Operand(tmp);
+      } else {
+         fprintf(stderr, "Unimplemented NIR instr bit size: ");
+         nir_print_instr(&instr->instr, stderr);
+         fprintf(stderr, "\n");
       }
+      break;
+   }
+   case nir_op_bfi: {
+      Temp bitmask = get_alu_src(ctx, instr->src[0]);
+      Temp insert = get_alu_src(ctx, instr->src[1]);
+      Temp base = get_alu_src(ctx, instr->src[2]);
+      Temp offset = get_alu_src(ctx, instr->src[3]);
 
       /* shift insert operand */
       Operand input;
       if (insert.type() == sgpr && offset.type() == sgpr) {
          nir_const_value* const_insert = nir_src_as_const_value(instr->src[1].src);
-         nir_const_value* const_offset = nir_src_as_const_value(instr->src[2].src);
+         nir_const_value* const_offset = nir_src_as_const_value(instr->src[3].src);
          if (const_insert && const_offset) {
             uint32_t const_input = const_insert->u32[0] << const_offset->u32[0];
             input = Operand(const_input);
@@ -1516,16 +1512,16 @@ void visit_alu_instr(isel_context *ctx, nir_alu_instr *instr)
 
       /* dst = (insert & bitmask) | (base & ~bitmask) */
       if (dst.regClass() == s1) {
-         assert(input.isTemp());
          aco_ptr<Instruction> sop2;
          Temp scc_tmp;
-         if (input.isConstant() && bitmask.isConstant()) {
-            uint32_t const_input = input.constantValue() & bitmask.constantValue();
+         nir_const_value* const_bitmask = nir_src_as_const_value(instr->src[0].src);
+         if (input.isConstant() && const_bitmask) {
+            uint32_t const_input = input.constantValue() & const_bitmask->u32[0];
             input = Operand(const_input);
          } else {
             sop2.reset(create_instruction<SOP2_instruction>(aco_opcode::s_and_b32, Format::SOP2, 2, 2));
             sop2->getOperand(0) = input;
-            sop2->getOperand(1) = bitmask;
+            sop2->getOperand(1) = Operand(bitmask);
             insert = {ctx->program->allocateId(), s1};
             sop2->getDefinition(0) = Definition(insert);
             scc_tmp = {ctx->program->allocateId(), b};
@@ -1535,23 +1531,29 @@ void visit_alu_instr(isel_context *ctx, nir_alu_instr *instr)
             input = Operand(insert);
          }
 
-         if (input.isConstant() && bitmask.isConstant() &&
-             input.constantValue() == bitmask.constantValue()) {
+         Operand base_op;
+         nir_const_value* const_base = nir_src_as_const_value(instr->src[3].src);
+         if (input.isConstant() && const_bitmask &&
+             input.constantValue() == const_bitmask->u32[0]) {
             /* then we don't need to mask out the bits from base */
+            base_op = Operand(base);
+         } else if (const_base && const_bitmask) {
+            base_op = Operand(const_base->u32[0] & ~const_bitmask->u32[0]);
          } else {
             sop2.reset(create_instruction<SOP2_instruction>(aco_opcode::s_andn2_b32, Format::SOP2, 2, 2));
             sop2->getOperand(0) = Operand(base);
-            sop2->getOperand(1) = bitmask;
+            sop2->getOperand(1) = Operand(bitmask);
             base = {ctx->program->allocateId(), s1};
             sop2->getDefinition(0) = Definition(base);
             scc_tmp = {ctx->program->allocateId(), b};
             sop2->getDefinition(1) = Definition(scc_tmp);
             sop2->getDefinition(1).setFixed(PhysReg{253});
             ctx->block->instructions.emplace_back(std::move(sop2));
+            base_op = Operand(base);
          }
 
          sop2.reset(create_instruction<SOP2_instruction>(aco_opcode::s_or_b32, Format::SOP2, 2, 2));
-         sop2->getOperand(0) = Operand(base);
+         sop2->getOperand(0) = base_op;
          sop2->getOperand(1) = input;
          sop2->getDefinition(0) = Definition(dst);
          scc_tmp = {ctx->program->allocateId(), b};
@@ -1560,86 +1562,43 @@ void visit_alu_instr(isel_context *ctx, nir_alu_instr *instr)
          ctx->block->instructions.emplace_back(std::move(sop2));
 
       } else if (dst.regClass() == v1) {
-         /* if input and bitmask are constant, it's better to just do it manually */
-         if (input.isConstant() && bitmask.isConstant()) {
-            uint32_t const_input = input.constantValue() & bitmask.constantValue();
-            input = Operand(const_input);
 
-            /* only mask out the base, if input != bitmask */
-            if (input.constantValue() != bitmask.constantValue()) {
-               aco_ptr<Instruction> vop2{create_instruction<VOP2_instruction>(aco_opcode::v_and_b32, Format::VOP2, 2, 1)};
-               vop2->getOperand(0) = Operand(~bitmask.constantValue());
-               vop2->getOperand(1) = Operand(base);
-               base = {ctx->program->allocateId(), v1};
-               vop2->getDefinition(0) = Definition(base);
-               ctx->block->instructions.emplace_back(std::move(vop2));
+         if (input.isLiteral()) {
+            aco_ptr<Instruction> mov;
+            if (bitmask.type() == sgpr || base.type() == sgpr) { /* v_mov */
+               mov.reset(create_instruction<VOP1_instruction>(aco_opcode::s_mov_b32, Format::VOP1, 1, 1));
+               mov->getOperand(0) = input;
+               Temp tmp = {ctx->program->allocateId(), v1};
+               mov->getDefinition(0) = Definition(tmp);
+               ctx->block->instructions.emplace_back(std::move(mov));
+               input = Operand(tmp);
+            } else { /* s_mov */
+               mov.reset(create_instruction<SOP1_instruction>(aco_opcode::s_mov_b32, Format::SOP1, 1, 1));
+               mov->getOperand(0) = input;
+               Temp tmp = {ctx->program->allocateId(), s1};
+               mov->getDefinition(0) = Definition(tmp);
+               ctx->block->instructions.emplace_back(std::move(mov));
+               input = Operand(tmp);
             }
-
-            aco_ptr<Instruction> vop2{create_instruction<VOP2_instruction>(aco_opcode::v_or_b32, Format::VOP2, 2, 1)};
-            vop2->getOperand(0) = input;
-            vop2->getOperand(1) = Operand(base);
-            base = {ctx->program->allocateId(), v1};
-            vop2->getDefinition(0) = Definition(base);
-            ctx->block->instructions.emplace_back(std::move(vop2));
-
-         } else {
-            if (input.isLiteral()) {
-               aco_ptr<Instruction> mov;
-               if (bitmask.getTemp().type() == sgpr || base.type() == sgpr) { /* v_mov */
-                  mov.reset(create_instruction<VOP1_instruction>(aco_opcode::s_mov_b32, Format::VOP1, 1, 1));
-                  mov->getOperand(0) = input;
-                  Temp tmp = {ctx->program->allocateId(), v1};
-                  mov->getDefinition(0) = Definition(tmp);
-                  ctx->block->instructions.emplace_back(std::move(mov));
-                  input = Operand(tmp);
-               } else { /* s_mov */
-                  mov.reset(create_instruction<SOP1_instruction>(aco_opcode::s_mov_b32, Format::SOP1, 1, 1));
-                  mov->getOperand(0) = input;
-                  Temp tmp = {ctx->program->allocateId(), s1};
-                  mov->getDefinition(0) = Definition(tmp);
-                  ctx->block->instructions.emplace_back(std::move(mov));
-                  input = Operand(tmp);
-               }
-            } else if (bitmask.isLiteral()) {
-               aco_ptr<Instruction> mov;
-               if (input.getTemp().type() == sgpr || base.type() == sgpr) { /* v_mov */
-                  mov.reset(create_instruction<VOP1_instruction>(aco_opcode::s_mov_b32, Format::VOP1, 1, 1));
-                  mov->getOperand(0) = bitmask;
-                  Temp tmp = {ctx->program->allocateId(), v1};
-                  mov->getDefinition(0) = Definition(tmp);
-                  ctx->block->instructions.emplace_back(std::move(mov));
-                  bitmask = Operand(tmp);
-               } else { /* s_mov */
-                  mov.reset(create_instruction<SOP1_instruction>(aco_opcode::s_mov_b32, Format::SOP1, 1, 1));
-                  mov->getOperand(0) = bitmask;
-                  Temp tmp = {ctx->program->allocateId(), s1};
-                  mov->getDefinition(0) = Definition(tmp);
-                  ctx->block->instructions.emplace_back(std::move(mov));
-                  bitmask = Operand(tmp);
-               }
-            }
-            if (base.type() == sgpr && bitmask.isTemp() && bitmask.getTemp().type() == sgpr)
-               base = as_vgpr(ctx, base);
-            if (input.isTemp() && input.getTemp().type() == sgpr && bitmask.isTemp() && bitmask.getTemp().type() == sgpr)
-               input = Operand(as_vgpr(ctx, input.getTemp()));
-            if (base.type() == sgpr && input.isTemp() && input.getTemp().type() == sgpr)
-               base = as_vgpr(ctx, base);
-
-            assert(!(bitmask.isTemp() && bitmask.getTemp().type() == sgpr && input.isTemp() && input.getTemp().type() == sgpr));
-            aco_ptr<Instruction> bfi{create_instruction<VOP3A_instruction>(aco_opcode::v_bfi_b32, Format::VOP3A, 3, 1)};
-            bfi->getOperand(0) = bitmask;
-            bfi->getOperand(1) = Operand(base);
-            bfi->getOperand(2) = input;
-            bfi->getDefinition(0) = Definition(dst);
-            ctx->block->instructions.emplace_back(std::move(bfi));
          }
+
+         if (base.type() == sgpr && (bitmask.type() == sgpr || (input.isTemp() && input.getTemp().type() == sgpr)))
+            base = as_vgpr(ctx, base);
+         if (input.isTemp() && input.getTemp().type() == sgpr && bitmask.type() == sgpr)
+            input = Operand(as_vgpr(ctx, input.getTemp()));
+
+         aco_ptr<Instruction> bfi{create_instruction<VOP3A_instruction>(aco_opcode::v_bfi_b32, Format::VOP3A, 3, 1)};
+         bfi->getOperand(0) = Operand(bitmask);
+         bfi->getOperand(1) = input;
+         bfi->getOperand(2) = Operand(base);
+         bfi->getDefinition(0) = Definition(dst);
+         ctx->block->instructions.emplace_back(std::move(bfi));
 
       } else {
          fprintf(stderr, "Unimplemented NIR instr bit size: ");
          nir_print_instr(&instr->instr, stderr);
          fprintf(stderr, "\n");
       }
-
       break;
    }
    case nir_op_ubitfield_extract: {
