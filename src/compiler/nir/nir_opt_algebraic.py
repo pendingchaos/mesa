@@ -665,7 +665,7 @@ optimizations = [
    (('bfm', ('iand', 31, 'bits'), 'offset'), ('bfm', 'bits', 'offset')),
    (('bfm', 'bits', ('iand', 31, 'offset')), ('bfm', 'bits', 'offset')),
    (('bfm', '#bits', 'offset'),
-    ('ishl', ('isub', ('ishl', 1, '#bits'), 1), 'offset')),
+    ('ishl', ('isub', ('ishl', 1, 'bits'), 1), 'offset')),
 
    # bfm lowering
    (('bfm', 'bits', 'offset'),
