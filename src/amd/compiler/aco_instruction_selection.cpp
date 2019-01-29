@@ -1692,7 +1692,7 @@ void visit_alu_instr(isel_context *ctx, nir_alu_instr *instr)
          if (input.isLiteral()) {
             aco_ptr<Instruction> mov;
             if (bitmask.type() == sgpr || base.type() == sgpr) { /* v_mov */
-               mov.reset(create_instruction<VOP1_instruction>(aco_opcode::s_mov_b32, Format::VOP1, 1, 1));
+               mov.reset(create_instruction<VOP1_instruction>(aco_opcode::v_mov_b32, Format::VOP1, 1, 1));
                mov->getOperand(0) = input;
                Temp tmp = {ctx->program->allocateId(), v1};
                mov->getDefinition(0) = Definition(tmp);
