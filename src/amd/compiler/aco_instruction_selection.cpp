@@ -2517,6 +2517,9 @@ void visit_discard_if(isel_context *ctx, nir_intrinsic_instr *instr)
    discard->getDefinition(0) = Definition{ctx->program->allocateId(), b};
    discard->getDefinition(0).setFixed(PhysReg{253});
    ctx->block->instructions.emplace_back(std::move(discard));
+
+   ctx->cf_info.has_discard = true;
+
    return;
 }
 
@@ -4822,6 +4825,24 @@ static void visit_loop(isel_context *ctx, nir_loop *loop)
    }
 }
 
+static bool is_empty_cf_list(struct exec_list *list)
+{
+   foreach_list_typed(nir_cf_node, node, node, list) {
+      switch (node->type) {
+      case nir_cf_node_block: {
+         nir_block *block = nir_cf_node_as_block(node);
+         if (!exec_list_is_empty(&block->instr_list))
+            return false;
+         break;
+      }
+      default: {
+         return false;
+      }
+      }
+   }
+   return true;
+}
+
 static void visit_if(isel_context *ctx, nir_if *if_stmt)
 {
    Temp cond32 = get_ssa_temp(ctx, if_stmt->condition.ssa);
@@ -4890,6 +4911,7 @@ static void visit_if(isel_context *ctx, nir_if *if_stmt)
 
       ctx->cf_info.has_break = false;
       ctx->cf_info.has_continue = false;
+      ctx->cf_info.has_discard = false;
 
       /** emit else block */
       BB_else->index = ctx->program->blocks.size();
@@ -4914,6 +4936,7 @@ static void visit_if(isel_context *ctx, nir_if *if_stmt)
 
       ctx->cf_info.has_break = false;
       ctx->cf_info.has_continue = false;
+      ctx->cf_info.has_discard = false;
 
       /** emit endif merge block */
       BB_endif->index = ctx->program->blocks.size();
@@ -4933,6 +4956,114 @@ static void visit_if(isel_context *ctx, nir_if *if_stmt)
       append_logical_start(BB_endif);
       ctx->block = BB_endif;
       ctx->cf_info.parent_if.merge_block = parent_if_merge_block;
+
+   } else if (is_empty_cf_list(&if_stmt->else_list)) { /* one-sided non-uniform branch */
+      Block* BB_if = ctx->block;
+      Block* BB_then = ctx->program->createAndInsertBlock();
+      BB_then->loop_nest_depth = ctx->cf_info.loop_nest_depth;
+      Block* BB_else = new Block();
+      BB_else->loop_nest_depth = ctx->cf_info.loop_nest_depth;
+      Block* BB_endif = new Block();
+      BB_endif->loop_nest_depth = ctx->cf_info.loop_nest_depth;
+
+      /** emit conditional statement */
+      Temp cond = extract_divergent_cond32(ctx, cond32);
+      append_logical_end(BB_if);
+
+      /* create the exec mask for then branch */
+      aco_ptr<SOP1_instruction> set_exec{create_instruction<SOP1_instruction>(aco_opcode::s_and_saveexec_b64, Format::SOP1, 1, 2)};
+      set_exec->getOperand(0) = Operand(cond);
+      Temp orig_exec = {ctx->program->allocateId(), s2};
+      set_exec->getDefinition(0) = Definition(orig_exec);
+      set_exec->getDefinition(1) = Definition(PhysReg{253}, b);
+      BB_if->instructions.push_back(std::move(set_exec));
+
+      branch.reset(create_instruction<Pseudo_branch_instruction>(aco_opcode::p_cbranch_z, Format::PSEUDO_BRANCH, 1, 0));
+      branch->getOperand(0) = Operand(exec, s2);
+      branch->targets[0] = BB_else;
+      branch->targets[1] = BB_then;
+      BB_if->instructions.push_back(std::move(branch));
+      add_edge(BB_if, BB_then);
+      add_edge(BB_if, BB_else);
+      if_info_RAII if_raii(ctx, BB_endif);
+
+      /* remember active lanes mask just in case */
+      Temp active_mask = ctx->cf_info.parent_loop.active_mask;
+
+      /** emit then block */
+      ctx->block = BB_then;
+      append_logical_start(BB_then);
+      visit_cf_list(ctx, &if_stmt->then_list);
+      BB_then = ctx->block;
+
+      Temp active_mask_new = ctx->cf_info.parent_loop.active_mask;
+
+      if (!ctx->cf_info.has_break && !ctx->cf_info.has_continue) {
+         append_logical_end(BB_then);
+         /* branch from then block to endif block */
+         branch.reset(create_instruction<Pseudo_branch_instruction>(aco_opcode::p_branch, Format::PSEUDO_BRANCH, 0, 0));
+         branch->targets[0] = BB_endif;
+         BB_then->instructions.emplace_back(std::move(branch));
+         add_edge(BB_then, BB_endif);
+      }
+
+      /** emit else block */
+      BB_else->index = ctx->program->blocks.size();
+      append_logical_start(BB_else);
+      append_logical_end(BB_else);
+      ctx->program->blocks.emplace_back(BB_else);
+
+      /* branch from else block to endif block */
+      branch.reset(create_instruction<Pseudo_branch_instruction>(aco_opcode::p_branch, Format::PSEUDO_BRANCH, 0, 0));
+      branch->targets[0] = BB_endif;
+      BB_else->instructions.emplace_back(std::move(branch));
+      add_edge(BB_else, BB_endif);
+
+      /** emit endif merge block */
+      BB_endif->index = ctx->program->blocks.size();
+      ctx->program->blocks.emplace_back(BB_endif);
+
+      if (active_mask.id() != active_mask_new.id()) {
+         /* emit linear phi for active mask */
+         aco_ptr<Instruction> phi;
+         phi.reset(create_instruction<Instruction>(aco_opcode::p_linear_phi, Format::PSEUDO, 2, 1));
+         phi->getOperand(0) = Operand(active_mask_new);
+         phi->getOperand(1) = Operand(active_mask);
+         ctx->cf_info.parent_loop.active_mask = {ctx->program->allocateId(), s2};
+         phi->getDefinition(0) = Definition(ctx->cf_info.parent_loop.active_mask);
+         BB_endif->instructions.push_back(std::move(phi));
+      }
+
+      /* restore original exec mask */
+      if (!ctx->cf_info.has_break && !ctx->cf_info.has_continue && !ctx->cf_info.has_discard) {
+         /* the exec mask could not have been modified, so a s_mov_b64 will do */
+         aco_ptr<SOP1_instruction> restore{create_instruction<SOP1_instruction>(aco_opcode::s_mov_b64, Format::SOP1, 2, 2)};
+         restore->getOperand(0) = Operand(orig_exec);
+         restore->getDefinition(0) = Definition(exec, s2);
+         BB_endif->instructions.emplace_back(std::move(restore));
+      } else {
+         aco_ptr<SOP2_instruction> nand{create_instruction<SOP2_instruction>(aco_opcode::s_andn2_b64, Format::SOP2, 2, 2)};
+         nand->getOperand(0) = Operand(orig_exec);
+         nand->getOperand(1) = Operand(cond);
+         Temp else_mask = {ctx->program->allocateId(), s2};
+         nand->getDefinition(0) = Definition(else_mask);
+         nand->getDefinition(1) = Definition(PhysReg{253}, b);
+         BB_endif->instructions.emplace_back(std::move(nand));
+
+         aco_ptr<SOP2_instruction> restore{create_instruction<SOP2_instruction>(aco_opcode::s_or_b64, Format::SOP2, 2, 2)};
+         restore->getOperand(0) = Operand(exec, s2);
+         restore->getOperand(1) = Operand(else_mask);
+         restore->getDefinition(0) = Definition(exec, s2);
+         restore->getDefinition(1) = Definition(PhysReg{253}, b);
+         BB_endif->instructions.emplace_back(std::move(restore));
+      }
+
+      ctx->cf_info.has_break = false;
+      ctx->cf_info.has_continue = false;
+      ctx->cf_info.has_discard = false;
+
+      append_logical_start(BB_endif);
+      ctx->block = BB_endif;
 
    } else { /* non-uniform condition */
       /**
@@ -5054,6 +5185,7 @@ static void visit_if(isel_context *ctx, nir_if *if_stmt)
       }
       ctx->cf_info.has_break = false;
       ctx->cf_info.has_continue = false;
+      ctx->cf_info.has_discard = false;
 
       /* invert exec mask */
       aco_ptr<Instruction> mov;
@@ -5124,6 +5256,7 @@ static void visit_if(isel_context *ctx, nir_if *if_stmt)
       }
       ctx->cf_info.has_break = false;
       ctx->cf_info.has_continue = false;
+      ctx->cf_info.has_discard = false;
 
       /* restore original exec mask */
       aco_ptr<SOP2_instruction> restore{create_instruction<SOP2_instruction>(aco_opcode::s_or_b64, Format::SOP2, 2, 2)};

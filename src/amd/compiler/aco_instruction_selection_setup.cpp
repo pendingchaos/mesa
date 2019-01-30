@@ -65,6 +65,7 @@ struct isel_context {
    struct {
       bool has_continue;
       bool has_break;
+      bool has_discard;
       uint16_t loop_nest_depth = 0;
       struct {
          Block* entry;
