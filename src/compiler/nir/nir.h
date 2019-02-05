@@ -3048,7 +3048,7 @@ typedef struct nir_lower_tex_options {
 bool nir_lower_tex(nir_shader *shader,
                    const nir_lower_tex_options *options);
 
-bool nir_lower_idiv(nir_shader *shader);
+bool nir_lower_idiv(nir_shader *shader, bool use_urcp);
 
 bool nir_lower_clip_vs(nir_shader *shader, unsigned ucp_enables, bool use_vars);
 bool nir_lower_clip_fs(nir_shader *shader, unsigned ucp_enables);
