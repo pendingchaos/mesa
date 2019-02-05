@@ -227,7 +227,7 @@ ir3_optimize_nir(struct ir3_shader *shader, nir_shader *s,
 	/* do idiv lowering after first opt loop to give a chance for
 	 * divide by immed power-of-two to be caught first:
 	 */
-	if (OPT(s, nir_lower_idiv))
+	if (OPT(s, nir_lower_idiv, false))
 		ir3_optimize_loop(s);
 
 	OPT_V(s, nir_remove_dead_variables, nir_var_function_temp);
