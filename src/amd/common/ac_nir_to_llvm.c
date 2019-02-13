@@ -548,10 +548,6 @@ static void visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
 	case nir_op_unpack_half_2x16:
 		src_components = 1;
 		break;
-	case nir_op_cube_face_coord:
-	case nir_op_cube_face_index:
-		src_components = 3;
-		break;
 	default:
 		src_components = num_components;
 		break;
@@ -1037,27 +1033,30 @@ static void visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
 		break;
 	}
 
-	case nir_op_cube_face_coord: {
+	case nir_op_cube_face_coord_t: {
 		src[0] = ac_to_float(&ctx->ac, src[0]);
-		LLVMValueRef results[2];
-		LLVMValueRef in[3];
-		for (unsigned chan = 0; chan < 3; chan++)
-			in[chan] = ac_llvm_extract_elem(&ctx->ac, src[0], chan);
-		results[0] = ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.cubetc",
-						ctx->ac.f32, in, 3, AC_FUNC_ATTR_READNONE);
-		results[1] = ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.cubesc",
-						ctx->ac.f32, in, 3, AC_FUNC_ATTR_READNONE);
-		result = ac_build_gather_values(&ctx->ac, results, 2);
+		src[1] = ac_to_float(&ctx->ac, src[1]);
+		src[2] = ac_to_float(&ctx->ac, src[2]);
+		result = ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.cubetc",
+					    ctx->ac.f32, src, 3, AC_FUNC_ATTR_READNONE);
+		break;
+	}
+
+	case nir_op_cube_face_coord_s: {
+		src[0] = ac_to_float(&ctx->ac, src[0]);
+		src[1] = ac_to_float(&ctx->ac, src[1]);
+		src[2] = ac_to_float(&ctx->ac, src[2]);
+		result = ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.cubesc",
+					    ctx->ac.f32, src, 3, AC_FUNC_ATTR_READNONE);
 		break;
 	}
 
 	case nir_op_cube_face_index: {
 		src[0] = ac_to_float(&ctx->ac, src[0]);
-		LLVMValueRef in[3];
-		for (unsigned chan = 0; chan < 3; chan++)
-			in[chan] = ac_llvm_extract_elem(&ctx->ac, src[0], chan);
+		src[1] = ac_to_float(&ctx->ac, src[1]);
+		src[2] = ac_to_float(&ctx->ac, src[2]);
 		result = ac_build_intrinsic(&ctx->ac,  "llvm.amdgcn.cubeid",
-						ctx->ac.f32, in, 3, AC_FUNC_ATTR_READNONE);
+						ctx->ac.f32, src, 3, AC_FUNC_ATTR_READNONE);
 		break;
 	}
 
