@@ -36,12 +36,24 @@ vtn_handle_amd_gcn_shader_instruction(struct vtn_builder *b, SpvOp ext_opcode,
    val->ssa = vtn_create_ssa_value(b, dest_type);
 
    switch ((enum GcnShaderAMD)ext_opcode) {
-   case CubeFaceIndexAMD:
-      val->ssa->def = nir_cube_face_index(&b->nb, vtn_ssa_value(b, w[5])->def);
-	  break;
-   case CubeFaceCoordAMD:
-      val->ssa->def = nir_cube_face_coord(&b->nb, vtn_ssa_value(b, w[5])->def);
+   case CubeFaceIndexAMD: {
+      nir_ssa_def *src = vtn_ssa_value(b, w[5])->def;
+      nir_ssa_def *x = nir_channel(&b->nb, src, 0);
+      nir_ssa_def *y = nir_channel(&b->nb, src, 1);
+      nir_ssa_def *z = nir_channel(&b->nb, src, 2);
+      val->ssa->def = nir_cube_face_index(&b->nb, x, y, z);
       break;
+   }
+   case CubeFaceCoordAMD: {
+      nir_ssa_def *src = vtn_ssa_value(b, w[5])->def;
+      nir_ssa_def *x = nir_channel(&b->nb, src, 0);
+      nir_ssa_def *y = nir_channel(&b->nb, src, 1);
+      nir_ssa_def *z = nir_channel(&b->nb, src, 2);
+      val->ssa->def = nir_vec2(&b->nb,
+                               nir_cube_face_coord_t(&b->nb, x, y, z),
+                               nir_cube_face_coord_s(&b->nb, x, y, z));
+      break;
+   }
    case TimeAMD: {
       nir_intrinsic_instr *intrin = nir_intrinsic_instr_create(b->nb.shader,
                                     nir_intrinsic_shader_clock);
