@@ -405,31 +405,6 @@ for i in range(1, 5):
       unop_horiz("fnoise{0}_{1}".format(i, j), i, tfloat, j, tfloat, "0.0f")
 
 
-# AMD_gcn_shader extended instructions
-unop_horiz("cube_face_coord", 2, tfloat32, 3, tfloat32, """
-dst.x = dst.y = 0.0;
-float absX = fabs(src0.x);
-float absY = fabs(src0.y);
-float absZ = fabs(src0.z);
-if (src0.x >= 0 && absX >= absY && absX >= absZ) { dst.x = -src0.y; dst.y = -src0.z; }
-if (src0.x < 0 && absX >= absY && absX >= absZ) { dst.x = -src0.y; dst.y = src0.z; }
-if (src0.y >= 0 && absY >= absX && absY >= absZ) { dst.x = src0.z; dst.y = src0.x; }
-if (src0.y < 0 && absY >= absX && absY >= absZ) { dst.x = -src0.z; dst.y = src0.x; }
-if (src0.z >= 0 && absZ >= absX && absZ >= absY) { dst.x = -src0.y; dst.y = src0.x; }
-if (src0.z < 0 && absZ >= absX && absZ >= absY) { dst.x = -src0.y; dst.y = -src0.x; }
-""")
-
-unop_horiz("cube_face_index", 1, tfloat32, 3, tfloat32, """
-float absX = fabs(src0.x);
-float absY = fabs(src0.y);
-float absZ = fabs(src0.z);
-if (src0.x >= 0 && absX >= absY && absX >= absZ) dst.x = 0;
-if (src0.x < 0 && absX >= absY && absX >= absZ) dst.x = 1;
-if (src0.y >= 0 && absY >= absX && absY >= absZ) dst.x = 2;
-if (src0.y < 0 && absY >= absX && absY >= absZ) dst.x = 3;
-if (src0.z >= 0 && absZ >= absX && absZ >= absY) dst.x = 4;
-if (src0.z < 0 && absZ >= absX && absZ >= absY) dst.x = 5;
-""")
 
 
 def binop_convert(name, out_type, in_type, alg_props, const_expr):
@@ -917,6 +892,45 @@ triop_horiz("vec3", 3, 1, 1, 1, """
 dst.x = src0.x;
 dst.y = src1.x;
 dst.z = src2.x;
+""")
+
+# AMD_gcn_shader extended instructions
+triop("cube_face_coord_t", tfloat32, """
+dst = 0.0;
+float absX = fabs(src0);
+float absY = fabs(src1);
+float absZ = fabs(src2);
+if (src0 >= 0 && absX >= absY && absX >= absZ) { dst = -src1; }
+if (src0 < 0 && absX >= absY && absX >= absZ) { dst = -src1; }
+if (src1 >= 0 && absY >= absX && absY >= absZ) { dst = src2; }
+if (src1 < 0 && absY >= absX && absY >= absZ) { dst = -src2; }
+if (src2 >= 0 && absZ >= absX && absZ >= absY) { dst = -src1; }
+if (src2 < 0 && absZ >= absX && absZ >= absY) { dst = -src1; }
+""")
+
+triop("cube_face_coord_s", tfloat32, """
+dst = 0.0;
+float absX = fabs(src0);
+float absY = fabs(src1);
+float absZ = fabs(src2);
+if (src0 >= 0 && absX >= absY && absX >= absZ) { dst = -src2; }
+if (src0 < 0 && absX >= absY && absX >= absZ) { dst = src2; }
+if (src1 >= 0 && absY >= absX && absY >= absZ) { dst = src0; }
+if (src1 < 0 && absY >= absX && absY >= absZ) { dst = src0; }
+if (src2 >= 0 && absZ >= absX && absZ >= absY) { dst = src0; }
+if (src2 < 0 && absZ >= absX && absZ >= absY) { dst = -src0; }
+""")
+
+triop("cube_face_index", tfloat32, """
+float absX = fabs(src0);
+float absY = fabs(src1);
+float absZ = fabs(src2);
+if (src0 >= 0 && absX >= absY && absX >= absZ) dst = 0.;
+if (src0 < 0 && absX >= absY && absX >= absZ) dst = 1.;
+if (src1 >= 0 && absY >= absX && absY >= absZ) dst = 2.;
+if (src1 < 0 && absY >= absX && absY >= absZ) dst = 3.;
+if (src2 >= 0 && absZ >= absX && absZ >= absY) dst = 4.;
+if (src2 < 0 && absZ >= absX && absZ >= absY) dst = 5.;
 """)
 
 def quadop_horiz(name, output_size, src1_size, src2_size, src3_size,
