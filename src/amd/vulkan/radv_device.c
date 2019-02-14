@@ -451,6 +451,7 @@ static const struct debug_control radv_debug_options[] = {
 	{"checkir", RADV_DEBUG_CHECKIR},
 	{"nothreadllvm", RADV_DEBUG_NOTHREADLLVM},
 	{"nobinning", RADV_DEBUG_NOBINNING},
+	{"compiletime", RADV_DEBUG_COMPILETIME},
 	{NULL, 0}
 };
 
