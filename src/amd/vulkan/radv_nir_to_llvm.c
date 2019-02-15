@@ -2051,7 +2051,8 @@ static void interp_fs_input(struct radv_shader_context *ctx,
 			    unsigned attr,
 			    LLVMValueRef interp_param,
 			    LLVMValueRef prim_mask,
-			    LLVMValueRef result[4])
+			    LLVMValueRef result[4],
+			    bool fp16)
 {
 	LLVMValueRef attr_number;
 	unsigned chan;
@@ -2086,7 +2087,10 @@ static void interp_fs_input(struct radv_shader_context *ctx,
 			result[chan] = ac_build_fs_interp(&ctx->ac,
 							  llvm_chan,
 							  attr_number,
-							  prim_mask, i, j);
+							  prim_mask, i, j,
+							  fp16 ? 0 : -1);
+			if (fp16)
+				result[chan] = ac_build_reinterpret(&ctx->ac, result[chan], ctx->ac.f16);
 		} else {
 			result[chan] = ac_build_fs_interp_mov(&ctx->ac,
 							      LLVMConstInt(ctx->ac.i32, 2, false),
@@ -2100,7 +2104,8 @@ static void interp_fs_input(struct radv_shader_context *ctx,
 
 static void
 handle_fs_input_decl(struct radv_shader_context *ctx,
-		     struct nir_variable *variable)
+		     struct nir_variable *variable,
+		     uint64_t *fp16_mask)
 {
 	int idx = variable->data.location;
 	unsigned attrib_count = glsl_count_attribute_slots(variable->type, false);
@@ -2110,7 +2115,8 @@ handle_fs_input_decl(struct radv_shader_context *ctx,
 	variable->data.driver_location = idx * 4;
 	mask = ((1ull << attrib_count) - 1) << variable->data.location;
 
-	if (glsl_get_base_type(glsl_without_array(variable->type)) == GLSL_TYPE_FLOAT) {
+	enum glsl_base_type type = glsl_get_base_type(glsl_without_array(variable->type));
+	if (type == GLSL_TYPE_FLOAT || type == GLSL_TYPE_FLOAT16) {
 		unsigned interp_type;
 		if (variable->data.sample)
 			interp_type = INTERP_SAMPLE;
@@ -2120,6 +2126,9 @@ handle_fs_input_decl(struct radv_shader_context *ctx,
 			interp_type = INTERP_CENTER;
 
 		interp = lookup_interp_param(&ctx->abi, variable->data.interpolation, interp_type);
+
+		if (type == GLSL_TYPE_FLOAT16)
+			*fp16_mask |= mask;
 	}
 
 	for (unsigned i = 0; i < attrib_count; ++i)
@@ -2173,8 +2182,9 @@ handle_fs_inputs(struct radv_shader_context *ctx,
 {
 	prepare_interp_optimize(ctx, nir);
 
+	uint64_t fp16_mask = 0;
 	nir_foreach_variable(variable, &nir->inputs)
-		handle_fs_input_decl(ctx, variable);
+		handle_fs_input_decl(ctx, variable, &fp16_mask);
 
 	unsigned index = 0;
 
@@ -2194,11 +2204,14 @@ handle_fs_inputs(struct radv_shader_context *ctx,
 		if (i >= VARYING_SLOT_VAR0 || i == VARYING_SLOT_PNTC ||
 		    i == VARYING_SLOT_PRIMITIVE_ID || i == VARYING_SLOT_LAYER) {
 			interp_param = *inputs;
+			bool fp16 = fp16_mask & (1ull << i);
 			interp_fs_input(ctx, index, interp_param, ctx->abi.prim_mask,
-					inputs);
+					inputs, fp16);
 
 			if (!interp_param)
 				ctx->shader_info->fs.flat_shaded_mask |= 1u << index;
+			if (fp16)
+				ctx->shader_info->fs.fp16_mask |= 1u << index;
 			if (i >= VARYING_SLOT_VAR0)
 				ctx->abi.fs_input_attr_indices[i - VARYING_SLOT_VAR0] = index;
 			++index;
@@ -2210,7 +2223,7 @@ handle_fs_inputs(struct radv_shader_context *ctx,
 
 				interp_param = *inputs;
 				interp_fs_input(ctx, index, interp_param,
-						ctx->abi.prim_mask, inputs);
+						ctx->abi.prim_mask, inputs, false);
 				++index;
 			}
 		} else if (i == VARYING_SLOT_POS) {

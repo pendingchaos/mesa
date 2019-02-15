@@ -1751,7 +1751,7 @@ static LLVMValueRef si_build_fs_interp(struct si_shader_context *ctx,
 		return ac_build_fs_interp(&ctx->ac,
 					  LLVMConstInt(ctx->i32, chan, 0),
 					  LLVMConstInt(ctx->i32, attr_index, 0),
-					  prim_mask, i, j);
+					  prim_mask, i, j, -1);
 	}
 	return ac_build_fs_interp_mov(&ctx->ac,
 				      LLVMConstInt(ctx->i32, 2, 0), /* P0 */

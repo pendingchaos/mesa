@@ -3120,8 +3120,15 @@ static LLVMValueRef visit_interp(struct ac_nir_context *ctx,
 				LLVMValueRef j = LLVMBuildExtractElement(
 					ctx->ac.builder, interp_param, ctx->ac.i32_1, "");
 
+				/* This fp16 handling isn't technically correct
+				 * but should be correct for the attributes we
+				 * are actually going to use. */
+				bool fp16 = instr->dest.ssa.bit_size == 16;
+				int word = fp16 ? 0 : -1;
 				v = ac_build_fs_interp(&ctx->ac, llvm_chan, attr_number,
-						       ctx->abi->prim_mask, i, j);
+						       ctx->abi->prim_mask, i, j, word);
+				if (fp16)
+					v = ac_build_reinterpret(&ctx->ac, v, ctx->ac.f32);
 			} else {
 				v = ac_build_fs_interp_mov(&ctx->ac, LLVMConstInt(ctx->ac.i32, 2, false),
 							   llvm_chan, attr_number, ctx->abi->prim_mask);
@@ -3134,8 +3141,9 @@ static LLVMValueRef visit_interp(struct ac_nir_context *ctx,
 		result[chan] = LLVMBuildExtractElement(ctx->ac.builder, gather, attrib_idx, "");
 
 	}
-	return ac_build_varying_gather_values(&ctx->ac, result, instr->num_components,
-					      var->data.location_frac);
+	LLVMValueRef ret = ac_build_varying_gather_values(&ctx->ac, result, instr->num_components,
+							  var->data.location_frac);
+	return ac_build_reinterpret(&ctx->ac, ret, get_def_type(ctx, &instr->dest.ssa));
 }
 
 static void visit_intrinsic(struct ac_nir_context *ctx,
