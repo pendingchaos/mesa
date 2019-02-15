@@ -224,7 +224,8 @@ ac_build_fs_interp(struct ac_llvm_context *ctx,
 		   LLVMValueRef attr_number,
 		   LLVMValueRef params,
 		   LLVMValueRef i,
-		   LLVMValueRef j);
+		   LLVMValueRef j,
+		   int word);
 
 LLVMValueRef
 ac_build_fs_interp_mov(struct ac_llvm_context *ctx,

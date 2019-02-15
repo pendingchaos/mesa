@@ -95,6 +95,7 @@ struct radv_shader_context {
 
 	uint64_t input_mask;
 	uint64_t output_mask;
+	uint64_t interp_mask;
 
 	bool is_gs_copy_shader;
 	LLVMValueRef gs_next_vertex[4];
@@ -2051,7 +2052,8 @@ static void interp_fs_input(struct radv_shader_context *ctx,
 			    unsigned attr,
 			    LLVMValueRef interp_param,
 			    LLVMValueRef prim_mask,
-			    LLVMValueRef result[4])
+			    LLVMValueRef result[4],
+			    bool fp16)
 {
 	LLVMValueRef attr_number;
 	unsigned chan;
@@ -2083,10 +2085,16 @@ static void interp_fs_input(struct radv_shader_context *ctx,
 		LLVMValueRef llvm_chan = LLVMConstInt(ctx->ac.i32, chan, false);
 
 		if (interp_param) {
+			bool fp16_interp = fp16 && HAVE_LLVM >= 0x900;
 			result[chan] = ac_build_fs_interp(&ctx->ac,
 							  llvm_chan,
 							  attr_number,
-							  prim_mask, i, j);
+							  prim_mask, i, j,
+							  fp16_interp ? 0 : -1);
+			if (fp16_interp)
+				result[chan] = ac_build_reinterpret(&ctx->ac, result[chan], ctx->ac.f16);
+			else if (fp16)
+				result[chan] = LLVMBuildFPTrunc(ctx->ac.builder, result[chan], ctx->ac.f16, "");
 		} else {
 			result[chan] = ac_build_fs_interp_mov(&ctx->ac,
 							      LLVMConstInt(ctx->ac.i32, 2, false),
@@ -2100,7 +2108,8 @@ static void interp_fs_input(struct radv_shader_context *ctx,
 
 static void
 handle_fs_input_decl(struct radv_shader_context *ctx,
-		     struct nir_variable *variable)
+		     struct nir_variable *variable,
+		     uint64_t *fp16_mask)
 {
 	int idx = variable->data.location;
 	unsigned attrib_count = glsl_count_attribute_slots(variable->type, false);
@@ -2110,7 +2119,8 @@ handle_fs_input_decl(struct radv_shader_context *ctx,
 	variable->data.driver_location = idx * 4;
 	mask = ((1ull << attrib_count) - 1) << variable->data.location;
 
-	if (glsl_get_base_type(glsl_without_array(variable->type)) == GLSL_TYPE_FLOAT) {
+	enum glsl_base_type type = glsl_get_base_type(glsl_without_array(variable->type));
+	if (type == GLSL_TYPE_FLOAT || type == GLSL_TYPE_FLOAT16) {
 		unsigned interp_type;
 		if (variable->data.sample)
 			interp_type = INTERP_SAMPLE;
@@ -2120,6 +2130,9 @@ handle_fs_input_decl(struct radv_shader_context *ctx,
 			interp_type = INTERP_CENTER;
 
 		interp = lookup_interp_param(&ctx->abi, variable->data.interpolation, interp_type);
+
+		if (type == GLSL_TYPE_FLOAT16)
+			*fp16_mask |= mask;
 	}
 
 	for (unsigned i = 0; i < attrib_count; ++i)
@@ -2173,8 +2186,9 @@ handle_fs_inputs(struct radv_shader_context *ctx,
 {
 	prepare_interp_optimize(ctx, nir);
 
+	uint64_t fp16_mask = 0;
 	nir_foreach_variable(variable, &nir->inputs)
-		handle_fs_input_decl(ctx, variable);
+		handle_fs_input_decl(ctx, variable, &fp16_mask);
 
 	unsigned index = 0;
 
@@ -2194,11 +2208,15 @@ handle_fs_inputs(struct radv_shader_context *ctx,
 		if (i >= VARYING_SLOT_VAR0 || i == VARYING_SLOT_PNTC ||
 		    i == VARYING_SLOT_PRIMITIVE_ID || i == VARYING_SLOT_LAYER) {
 			interp_param = *inputs;
+			bool fp16 = fp16_mask & (1ull << i);
 			interp_fs_input(ctx, index, interp_param, ctx->abi.prim_mask,
-					inputs);
+					inputs, fp16);
 
 			if (!interp_param)
 				ctx->shader_info->fs.flat_shaded_mask |= 1u << index;
+			/* pre-LLVM9 doesn't support fp16 interpolation intrinsics */
+			if (fp16 && HAVE_LLVM >= 0x900)
+				ctx->shader_info->fs.fp16_mask |= 1u << index;
 			if (i >= VARYING_SLOT_VAR0)
 				ctx->abi.fs_input_attr_indices[i - VARYING_SLOT_VAR0] = index;
 			++index;
@@ -2210,7 +2228,7 @@ handle_fs_inputs(struct radv_shader_context *ctx,
 
 				interp_param = *inputs;
 				interp_fs_input(ctx, index, interp_param,
-						ctx->abi.prim_mask, inputs);
+						ctx->abi.prim_mask, inputs, false);
 				++index;
 			}
 		} else if (i == VARYING_SLOT_POS) {
@@ -2265,6 +2283,8 @@ scan_shader_output_decl(struct radv_shader_context *ctx,
 	}
 
 	ctx->output_mask |= mask_attribs;
+	if (variable->data.interpolation != INTERP_MODE_FLAT)
+		ctx->interp_mask |= mask_attribs;
 }
 
 
@@ -2755,8 +2775,15 @@ handle_vs_outputs_post(struct radv_shader_context *ctx,
 		    i < VARYING_SLOT_VAR0)
 			continue;
 
-		for (unsigned j = 0; j < 4; j++)
-			values[j] = ac_to_float(&ctx->ac, radv_load_output(ctx, i, j));
+		for (unsigned j = 0; j < 4; j++) {
+			LLVMValueRef val = ac_to_float(&ctx->ac, radv_load_output(ctx, i, j));
+			if (HAVE_LLVM < 0x900 && (ctx->interp_mask & (1ull << i)) && ctx->abi.output_types[i * 4 + j] == ctx->ac.f16) {
+				val = ac_build_reinterpret(&ctx->ac, val, ctx->ac.f16);
+				val = LLVMBuildFPExt(ctx->ac.builder, val, ctx->ac.f32, "");
+				val = ac_to_float(&ctx->ac, val);
+			}
+			values[j] = val;
+		}
 
 		unsigned output_usage_mask;
 
