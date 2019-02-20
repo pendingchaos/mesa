@@ -681,11 +681,18 @@ shader_variant_create(struct radv_device *device,
 			bool aco_compile_time = device->instance->debug_flags & RADV_DEBUG_COMPILETIME;
 			struct timespec user1,user2;
 			if (aco_compile_time) {
+				struct nir_shader *llvm_shaders[shader_count];
+				for (int i = 0; i < shader_count; i++)
+					llvm_shaders[i] = nir_shader_clone(ralloc_parent(shaders[i]), shaders[i]);
+
 				clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &user1);
 				radv_compile_nir_shader(&ac_llvm, &binary, &variant->config,
-							&variant->info, shaders, shader_count,
+							&variant->info, llvm_shaders, shader_count,
 							options);
 				clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &user2);
+
+				for (int i = 0; i < shader_count; i++)
+					ralloc_free(llvm_shaders[i]);
 
 				fprintf(stderr, "%3d: ", num++);
 				double user_elapsed = (user2.tv_sec*NANOS + user2.tv_nsec - (user1.tv_sec*NANOS + user1.tv_nsec)) / (double) (NANOS / 1000);
