@@ -357,24 +357,6 @@ void emit_sop2_instruction(isel_context *ctx, nir_alu_instr *instr, aco_opcode o
    ctx->block->instructions.emplace_back(std::move(sop2));
 }
 
-void emit_sopc_instruction_output32(isel_context *ctx, nir_alu_instr *instr, aco_opcode op, Temp dst)
-{
-   aco_ptr<SOPC_instruction> cmp{create_instruction<SOPC_instruction>(op, Format::SOPC, 2, 1)};
-   cmp->getOperand(0) = Operand(get_alu_src(ctx, instr->src[0]));
-   cmp->getOperand(1) = Operand(get_alu_src(ctx, instr->src[1]));
-   Temp scc_tmp = {ctx->program->allocateId(), b};
-   cmp->getDefinition(0) = Definition(scc_tmp);
-   cmp->getDefinition(0).setFixed(scc);
-   ctx->block->instructions.emplace_back(std::move(cmp));
-   aco_ptr<SOP2_instruction> to_sgpr{create_instruction<SOP2_instruction>(aco_opcode::s_cselect_b32, Format::SOP2, 3, 1)};
-   to_sgpr->getOperand(0) = Operand(0xFFFFFFFF);
-   to_sgpr->getOperand(1) = Operand((uint32_t) 0);
-   to_sgpr->getOperand(2) = Operand(scc_tmp);
-   to_sgpr->getOperand(2).setFixed(scc);
-   to_sgpr->getDefinition(0) = Definition(dst);
-   ctx->block->instructions.emplace_back(std::move(to_sgpr));
-}
-
 void emit_vop2_instruction(isel_context *ctx, nir_alu_instr *instr, aco_opcode op, Temp dst, bool commutative, bool swap_srcs=false)
 {
    Temp src0 = get_alu_src(ctx, instr->src[swap_srcs ? 1 : 0]);
@@ -521,39 +503,6 @@ void emit_boolean_logic(isel_context *ctx, nir_alu_instr *instr, aco_opcode op32
    }
 }
 
-
-Temp extract_uniform_cond32(isel_context *ctx, Temp cond32)
-{
-   Temp cond = Temp{ctx->program->allocateId(), b};
-
-   aco_ptr<Instruction> cmp{create_instruction<SOPC_instruction>(aco_opcode::s_cmp_lg_u32, Format::SOPC, 2, 1)};
-   cmp->getOperand(0) = Operand{cond32};
-   cmp->getOperand(1) = Operand((uint32_t) 0);
-   cmp->getDefinition(0) = Definition{cond};
-   cmp->getDefinition(0).setFixed(scc);
-   ctx->block->instructions.emplace_back(std::move(cmp));
-
-   return cond;
-}
-
-Temp extract_divergent_cond32(isel_context *ctx, Temp cond32)
-{
-   Temp cond = Temp{ctx->program->allocateId(), s2};
-
-   aco_ptr<Instruction> cmp{create_instruction<VOPC_instruction>(aco_opcode::v_cmp_lg_u32, Format::VOPC, 2, 1)};
-   cmp->getOperand(0) = Operand((uint32_t) 0);
-   if (cond32.type() == sgpr) {
-      Temp vgpr_cond = {ctx->program->allocateId(), v1};
-      emit_v_mov(ctx, cond32, vgpr_cond);
-      cond32 = vgpr_cond;
-   }
-   cmp->getOperand(1) = Operand{cond32};
-   cmp->getDefinition(0) = Definition{cond};
-   cmp->getDefinition(0).setHint(vcc);
-   ctx->block->instructions.emplace_back(std::move(cmp));
-
-   return cond;
-}
 
 void emit_quad_swizzle(isel_context *ctx, Temp src, Temp dst,
                        unsigned lane0, unsigned lane1, unsigned lane2, unsigned lane3)
