@@ -712,20 +712,20 @@ void visit_alu_instr(isel_context *ctx, nir_alu_instr *instr)
    case nir_op_inot: {
       if (instr->dest.dest.ssa.bit_size == 1) {
          if (dst.regClass() == s2) {
-            aco_ptr<SOP2_instruction> sop2{create_instruction<SOP2_instruction>(aco_opcode::s_not_b64, Format::SOP1, 1, 2)};
-            sop2->getOperand(0) = Operand(as_divergent_bool(ctx, get_alu_src(ctx, instr->src[0]), false));
-            sop2->getDefinition(0) = Definition(dst);
-            sop2->getDefinition(1) = Definition(ctx->program->allocateId(), scc, b);
-            ctx->block->instructions.emplace_back(std::move(sop2));
+            aco_ptr<SOP1_instruction> sop1{create_instruction<SOP1_instruction>(aco_opcode::s_not_b64, Format::SOP1, 1, 2)};
+            sop1->getOperand(0) = Operand(as_divergent_bool(ctx, get_alu_src(ctx, instr->src[0]), false));
+            sop1->getDefinition(0) = Definition(dst);
+            sop1->getDefinition(1) = Definition(ctx->program->allocateId(), scc, b);
+            ctx->block->instructions.emplace_back(std::move(sop1));
          } else {
             assert(dst.regClass() == b);
-            aco_ptr<SOP2_instruction> sop2{create_instruction<SOP2_instruction>(aco_opcode::s_not_b32, Format::SOP1, 1, 2)};
-            sop2->getOperand(0) = Operand(as_uniform_bool32(ctx, get_alu_src(ctx, instr->src[0]), false));
-            sop2->getDefinition(0) = Definition{ctx->program->allocateId(), s1};
-            sop2->getDefinition(1) = Definition(dst);
-            sop2->getDefinition(1).setFixed(scc);
-            ctx->block->instructions.emplace_back(std::move(sop2));
-            ctx->allocated_bool32.emplace(dst.id(), sop2->getDefinition(0).tempId());
+            aco_ptr<SOP1_instruction> sop1{create_instruction<SOP1_instruction>(aco_opcode::s_not_b32, Format::SOP1, 1, 2)};
+            sop1->getOperand(0) = Operand(as_uniform_bool32(ctx, get_alu_src(ctx, instr->src[0]), false));
+            sop1->getDefinition(0) = Definition{ctx->program->allocateId(), s1};
+            sop1->getDefinition(1) = Definition(dst);
+            sop1->getDefinition(1).setFixed(scc);
+            ctx->block->instructions.emplace_back(std::move(sop1));
+            ctx->allocated_bool32.emplace(dst.id(), sop1->getDefinition(0).tempId());
          }
       } else if (dst.regClass() == v1) {
          emit_vop1_instruction(ctx, instr, aco_opcode::v_not_b32, dst);
