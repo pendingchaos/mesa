@@ -1,5 +1,5 @@
 /*
- * Copyright © 2018 Valve Corporation
+ * Copyright © 2019 Valve Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
