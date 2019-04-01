@@ -309,6 +309,9 @@ struct radv_physical_device {
 	/* Whether LOAD_CONTEXT_REG packets are supported. */
 	bool has_load_ctx_reg_pkt;
 
+	/* Whether to use the experimental compiler backend */
+	bool use_aco;
+
 	/* This is the drivers on-disk cache used as a fallback as opposed to
 	 * the pipeline cache defined by apps.
 	 */

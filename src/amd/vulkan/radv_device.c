@@ -375,6 +375,8 @@ radv_physical_device_init(struct radv_physical_device *device,
 				       (device->rad_info.chip_class >= VI &&
 				        device->rad_info.me_fw_feature >= 41);
 
+	device->use_aco = device->instance->perftest_flags & RADV_PERFTEST_ACO;
+
 	radv_physical_device_init_mem_types(device);
 	radv_fill_device_extension_table(device, &device->supported_extensions);
 
@@ -763,9 +765,9 @@ void radv_GetPhysicalDeviceFeatures(
 		.shaderStorageImageWriteWithoutFormat     = true,
 		.shaderClipDistance                       = true,
 		.shaderCullDistance                       = true,
-		.shaderFloat64                            = true,
-		.shaderInt64                              = true,
-		.shaderInt16                              = pdevice->rad_info.chip_class >= GFX9,
+		.shaderFloat64                            = !pdevice->use_aco,
+		.shaderInt64                              = !pdevice->use_aco,
+		.shaderInt16                              = pdevice->rad_info.chip_class >= GFX9 && !pdevice->use_aco,
 		.sparseBinding                            = true,
 		.variableMultisampleRate                  = true,
 		.inheritedQueries                         = true,
@@ -807,7 +809,7 @@ void radv_GetPhysicalDeviceFeatures2(
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES: {
 			VkPhysicalDevice16BitStorageFeatures *features =
 			    (VkPhysicalDevice16BitStorageFeatures*)ext;
-			bool enabled = pdevice->rad_info.chip_class >= VI;
+			bool enabled = pdevice->rad_info.chip_class >= VI && !pdevice->use_aco;
 			features->storageBuffer16BitAccess = enabled;
 			features->uniformAndStorageBuffer16BitAccess = enabled;
 			features->storagePushConstant16 = enabled;
@@ -901,7 +903,7 @@ void radv_GetPhysicalDeviceFeatures2(
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_8BIT_STORAGE_FEATURES_KHR: {
 			VkPhysicalDevice8BitStorageFeaturesKHR *features =
 			    (VkPhysicalDevice8BitStorageFeaturesKHR*)ext;
-			bool enabled = pdevice->rad_info.chip_class >= VI;
+			bool enabled = pdevice->rad_info.chip_class >= VI && !pdevice->use_aco;
 			features->storageBuffer8BitAccess = enabled;
 			features->uniformAndStorageBuffer8BitAccess = enabled;
 			features->storagePushConstant8 = enabled;

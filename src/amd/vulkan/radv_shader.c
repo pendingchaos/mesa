@@ -274,19 +274,19 @@ radv_shader_compile_to_nir(struct radv_device *device,
 				.descriptor_array_dynamic_indexing = true,
 				.device_group = true,
 				.draw_parameters = true,
-				.float64 = true,
+				.float64 = !(device->instance->perftest_flags & RADV_PERFTEST_ACO),
 				.gcn_shader = true,
 				.geometry_streams = true,
 				.image_read_without_format = true,
 				.image_write_without_format = true,
-				.int16 = true,
-				.int64 = true,
+				.int16 = !(device->instance->perftest_flags & RADV_PERFTEST_ACO),
+				.int64 = !(device->instance->perftest_flags & RADV_PERFTEST_ACO),
 				.multiview = true,
 				.physical_storage_buffer_address = true,
 				.runtime_descriptor_array = true,
 				.shader_viewport_index_layer = true,
 				.stencil_export = true,
-				.storage_16bit = true,
+				.storage_16bit = !(device->instance->perftest_flags & RADV_PERFTEST_ACO),
 				.storage_image_ms = true,
 				.subgroup_arithmetic = true,
 				.subgroup_ballot = true,
@@ -298,7 +298,7 @@ radv_shader_compile_to_nir(struct radv_device *device,
 				.transform_feedback = true,
 				.trinary_minmax = true,
 				.variable_pointers = true,
-				.storage_8bit = true,
+				.storage_8bit = !(device->instance->perftest_flags & RADV_PERFTEST_ACO),
 			},
 			.ubo_ptr_type = glsl_vector_type(GLSL_TYPE_UINT, 2),
 			.ssbo_ptr_type = glsl_vector_type(GLSL_TYPE_UINT, 2),
@@ -680,13 +680,16 @@ shader_variant_create(struct radv_device *device,
 				chip_family, tm_options);
 
 	bool isLLVM = true;
+	bool use_aco = device->instance->perftest_flags & RADV_PERFTEST_ACO &&
+		       (shaders[0]->info.stage == MESA_SHADER_FRAGMENT ||
+		        shaders[0]->info.stage == MESA_SHADER_COMPUTE);
 	if (gs_copy_shader) {
 		assert(shader_count == 1);
 		radv_compile_gs_copy_shader(&ac_llvm, *shaders, &binary,
 					    &variant->config, &variant->info,
 					    options);
 	} else {
-		if (shaders[0]->info.stage == MESA_SHADER_FRAGMENT || shaders[0]->info.stage == MESA_SHADER_COMPUTE) {
+		if (use_aco) {
 			bool aco_compile_time = device->instance->debug_flags & RADV_DEBUG_COMPILETIME;
 			struct timespec user1,user2;
 			if (aco_compile_time) {
