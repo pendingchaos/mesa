@@ -778,6 +778,7 @@ enum ReduceOp {
  * Operand(1): reduce temporary
  * Operand(2): vector temporary
  * Operand(3): scalar temporary
+ * Operand(4): scalar identity temporary
  * Definition(0): result
  * Definition(1): scc clobber
  * Definition(2): vcc clobber

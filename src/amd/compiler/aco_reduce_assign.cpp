@@ -130,6 +130,16 @@ void setup_reduce_temp(Program* program)
          bld.it = it;
          bld.forwards = true;
          instr->getOperand(3) = bld.pseudo(aco_opcode::p_undef, bld.def(s2));
+
+         /* scalar identity temporary */
+         if (instr->opcode == aco_opcode::p_exclusive_scan &&
+             (op == imin32 || op == imin64 ||
+              op == imax32 || op == imax64 ||
+              op == fmin32 || op == fmin64 ||
+              op == fmax32 || op == fmax64)) {
+            instr->getOperand(4) = bld.pseudo(aco_opcode::p_undef, bld.def(s1));
+         }
+
          it = bld.it;
 
          /* clobbers */
