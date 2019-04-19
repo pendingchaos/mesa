@@ -355,7 +355,7 @@ void init_context(isel_context *ctx, nir_function_impl *impl)
                      size = 2;
                      break;
                   case nir_intrinsic_reduce:
-                     if (nir_intrinsic_cluster_size(intrinsic) == 0) {
+                     if (nir_intrinsic_cluster_size(intrinsic) == 0 || nir_intrinsic_cluster_size(intrinsic) == 64) {
                         type = sgpr;
                      } else if (intrinsic->src[0].ssa->bit_size == 1) {
                         type = sgpr;
@@ -1139,7 +1139,7 @@ setup_isel_context(Program* program, nir_shader *nir,
       fprintf(stderr, "NIR shader before instruction selection:\n");
       nir_print_shader(nir, stderr);
    }
-   ctx.divergent_vals = nir_divergence_analysis(nir);
+   ctx.divergent_vals = nir_divergence_analysis(nir, 64);
    init_context(&ctx, func->impl);
 
    ctx.program->blocks.push_back(std::unique_ptr<Block>{new Block});
