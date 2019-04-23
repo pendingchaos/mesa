@@ -201,6 +201,7 @@ visit_intrinsic(bool *divergent, nir_intrinsic_instr *instr, unsigned subgroup_s
    case nir_intrinsic_shared_atomic_xor:
    case nir_intrinsic_shared_atomic_exchange:
    case nir_intrinsic_shared_atomic_comp_swap:
+   case nir_intrinsic_shuffle:
    default:
       is_divergent = true;
       break;
