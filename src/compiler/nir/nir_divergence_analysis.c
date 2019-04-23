@@ -132,10 +132,28 @@ visit_intrinsic(bool *divergent, nir_intrinsic_instr *instr, unsigned subgroup_s
       is_divergent = false;
       break;
 
-   case nir_intrinsic_reduce:
+   case nir_intrinsic_reduce: {
+      nir_op op = nir_intrinsic_reduction_op(instr);
       is_divergent = nir_intrinsic_cluster_size(instr) != 0 &&
-                     nir_intrinsic_cluster_size(instr) != subgroup_size;
+                     nir_intrinsic_cluster_size(instr) != subgroup_size &&
+                     (divergent[instr->src[0].ssa->index] || (op != nir_op_ior && op != nir_op_iand));
       break;
+   }
+
+   case nir_intrinsic_shuffle:
+   case nir_intrinsic_quad_broadcast:
+   case nir_intrinsic_quad_swap_horizontal:
+   case nir_intrinsic_quad_swap_vertical:
+   case nir_intrinsic_quad_swap_diagonal:
+      is_divergent = divergent[instr->src[0].ssa->index];
+      break;
+
+   case nir_intrinsic_inclusive_scan:
+   case nir_intrinsic_exclusive_scan: {
+      nir_op op = nir_intrinsic_reduction_op(instr);
+      is_divergent = divergent[instr->src[0].ssa->index] || (op != nir_op_ior && op != nir_op_iand);
+      break;
+   }
 
    case nir_intrinsic_load_ubo:
    case nir_intrinsic_image_deref_load:
@@ -203,11 +221,6 @@ visit_intrinsic(bool *divergent, nir_intrinsic_instr *instr, unsigned subgroup_s
    case nir_intrinsic_shared_atomic_xor:
    case nir_intrinsic_shared_atomic_exchange:
    case nir_intrinsic_shared_atomic_comp_swap:
-   case nir_intrinsic_shuffle:
-   case nir_intrinsic_quad_broadcast:
-   case nir_intrinsic_quad_swap_horizontal:
-   case nir_intrinsic_quad_swap_vertical:
-   case nir_intrinsic_quad_swap_diagonal:
    default:
       is_divergent = true;
       break;
