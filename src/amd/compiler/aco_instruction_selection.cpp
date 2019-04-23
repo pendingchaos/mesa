@@ -3619,13 +3619,12 @@ Temp emit_boolean_reduce(isel_context *ctx, nir_op op, unsigned cluster_size, Te
       return bld.sop1(aco_opcode::s_wqm_b64, bld.def(s2), bld.def(s1, scc),
                       bld.sop2(aco_opcode::s_and_b64, bld.def(s2), bld.def(s1, scc), src, Operand(exec, s2)));
    } else if (op == nir_op_iand && cluster_size == 64) {
-      //subgroupAnd(val) -> (val & exec) == exec
-      Temp tmp = bld.sop2(aco_opcode::s_and_b64, bld.def(s2), bld.def(s1, scc), src, Operand(exec, s2));
-      return bld.sopc(aco_opcode::s_cmp_eq_u64, bld.def(s1, scc), tmp, Operand(exec, s2));
+      //subgroupAnd(val) -> (exec & ~val) == 0
+      Temp tmp = bld.sop2(aco_opcode::s_andn2_b64, bld.def(s2), bld.def(s1, scc), Operand(exec, s2), src).def(1).getTemp();
+      return bld.sopc(aco_opcode::s_cmp_eq_u32, bld.def(s1, scc), tmp, Operand(0u));
    } else if (op == nir_op_ior && cluster_size == 64) {
       //subgroupOr(val) -> (val & exec) != 0
-      Temp tmp = bld.sop2(aco_opcode::s_and_b64, bld.def(s2), bld.def(s1, scc), src, Operand(exec, s2));
-      return bld.sopc(aco_opcode::s_cmp_lg_u64, bld.def(s1, scc), tmp, Operand(0u));
+      return bld.sop2(aco_opcode::s_and_b64, bld.def(s2), bld.def(s1, scc), src, Operand(exec, s2)).def(1).getTemp();
    } else if (op == nir_op_ixor && cluster_size == 64) {
       //subgroupXor(val) -> s_bcnt1_i32_b64(val & exec) & 1
       Temp tmp = bld.sop2(aco_opcode::s_and_b64, bld.def(s2), bld.def(s1, scc), src, Operand(exec, s2));
