@@ -4183,8 +4183,7 @@ void visit_intrinsic(isel_context *ctx, nir_intrinsic_instr *instr)
          Definition tmp = bld.def(dst.regClass());
          if (instr->dest.ssa.bit_size == 1 && src.regClass() == s2) {
             src = bld.vop2_e64(aco_opcode::v_cndmask_b32, bld.def(v1), Operand(0u), Operand((uint32_t)-1), src);
-            bld.vopc(aco_opcode::v_cmp_lg_u32, tmp, Operand(0u),
-                     bld.vop1_dpp(aco_opcode::v_mov_b32, bld.def(v1), src, dpp_ctrl));
+            bld.vopc_dpp(aco_opcode::v_cmp_lg_u32, tmp, Operand(0u), src, dpp_ctrl);
          } else if (instr->dest.ssa.bit_size == 32) {
             bld.vop1_dpp(aco_opcode::v_mov_b32, tmp, src, dpp_ctrl);
          } else {
