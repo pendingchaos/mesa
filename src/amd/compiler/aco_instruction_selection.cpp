@@ -3611,13 +3611,14 @@ Temp emit_boolean_reduce(isel_context *ctx, nir_op op, unsigned cluster_size, Te
    if (cluster_size == 1) {
       return src;
    } if (op == nir_op_iand && cluster_size == 4) {
-      //subgroupClusteredAnd(val, 4) -> ~wqm(~val)
+      //subgroupClusteredAnd(val, 4) -> ~wqm(exec & ~val)
+      Temp tmp = bld.sop2(aco_opcode::s_andn2_b64, bld.def(s2), bld.def(s1, scc), Operand(exec, s2), src);
       return bld.sop1(aco_opcode::s_not_b64, bld.def(s2), bld.def(s1, scc),
-                      bld.sop1(aco_opcode::s_wqm_b64, bld.def(s2), bld.def(s1, scc),
-                               bld.sop1(aco_opcode::s_not_b64, bld.def(s2), bld.def(s1, scc), src)));
+                      bld.sop1(aco_opcode::s_wqm_b64, bld.def(s2), bld.def(s1, scc), tmp));
    } else if (op == nir_op_ior && cluster_size == 4) {
-      //subgroupClusteredOr(val, 4) -> wqm(val)
-      return bld.sop1(aco_opcode::s_wqm_b64, bld.def(s2), bld.def(s1, scc), src);
+      //subgroupClusteredOr(val, 4) -> wqm(val & exec)
+      return bld.sop1(aco_opcode::s_wqm_b64, bld.def(s2), bld.def(s1, scc),
+                      bld.sop2(aco_opcode::s_and_b64, bld.def(s2), bld.def(s1, scc), src, Operand(exec, s2)));
    } else if (op == nir_op_iand && cluster_size == 64) {
       //subgroupAnd(val) -> (val & exec) == exec
       Temp tmp = bld.sop2(aco_opcode::s_and_b64, bld.def(s2), bld.def(s1, scc), src, Operand(exec, s2));
