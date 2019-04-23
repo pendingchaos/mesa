@@ -1671,9 +1671,8 @@ void visit_alu_instr(isel_context *ctx, nir_alu_instr *instr)
       } else if (dst.regClass() == s2 && instr->src[0].src.ssa->bit_size == 1) {
          Temp src0 = get_alu_src(ctx, instr->src[0]);
          Temp src1 = get_alu_src(ctx, instr->src[1]);
-         bld.sop1(aco_opcode::s_not_b64, Definition(dst), bld.def(s1, scc),
-                  bld.sop2(aco_opcode::s_xor_b64, bld.def(s2), bld.def(s1, scc),
-                           as_divergent_bool(ctx, src0, false), as_divergent_bool(ctx, src1, false)));
+         bld.sop2(aco_opcode::s_xnor_b64, Definition(dst), bld.def(s1, scc),
+                  as_divergent_bool(ctx, src0, false), as_divergent_bool(ctx, src1, false));
       } else {
          fprintf(stderr, "Unimplemented NIR instr bit size: ");
          nir_print_instr(&instr->instr, stderr);
