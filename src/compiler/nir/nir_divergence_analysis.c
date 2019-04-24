@@ -101,7 +101,7 @@ visit_alu(bool *divergent, nir_alu_instr *instr)
 }
 
 static bool
-visit_intrinsic(bool *divergent, nir_intrinsic_instr *instr, unsigned subgroup_size)
+visit_intrinsic(bool *divergent, nir_intrinsic_instr *instr)
 {
    if (!nir_intrinsic_infos[instr->intrinsic].has_dest)
       return false;
@@ -135,7 +135,6 @@ visit_intrinsic(bool *divergent, nir_intrinsic_instr *instr, unsigned subgroup_s
    case nir_intrinsic_reduce: {
       nir_op op = nir_intrinsic_reduction_op(instr);
       is_divergent = nir_intrinsic_cluster_size(instr) != 0 &&
-                     nir_intrinsic_cluster_size(instr) != subgroup_size &&
                      (divergent[instr->src[0].ssa->index] || (op != nir_op_ior && op != nir_op_iand));
       break;
    }
@@ -416,7 +415,7 @@ visit_deref(bool *divergent, nir_deref_instr *instr)
 }
 
 bool*
-nir_divergence_analysis(nir_shader *shader, unsigned subgroup_size)
+nir_divergence_analysis(nir_shader *shader)
 {
    nir_function_impl *impl = nir_shader_get_entrypoint(shader);
    bool *t = rzalloc_array(shader, bool, impl->ssa_alloc);
@@ -434,7 +433,7 @@ nir_divergence_analysis(nir_shader *shader, unsigned subgroup_size)
             has_changed |= visit_alu(t, nir_instr_as_alu(instr));
             break;
          case nir_instr_type_intrinsic:
-            has_changed |= visit_intrinsic(t, nir_instr_as_intrinsic(instr), subgroup_size);
+            has_changed |= visit_intrinsic(t, nir_instr_as_intrinsic(instr));
             break;
          case nir_instr_type_tex:
             has_changed |= visit_tex(t, nir_instr_as_tex(instr));

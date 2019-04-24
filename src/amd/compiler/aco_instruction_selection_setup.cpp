@@ -1149,7 +1149,7 @@ setup_isel_context(Program* program, nir_shader *nir,
       fprintf(stderr, "NIR shader before instruction selection:\n");
       nir_print_shader(nir, stderr);
    }
-   ctx.divergent_vals = nir_divergence_analysis(nir, 64);
+   ctx.divergent_vals = nir_divergence_analysis(nir);
    init_context(&ctx, func->impl);
 
    ctx.program->blocks.push_back(std::unique_ptr<Block>{new Block});
