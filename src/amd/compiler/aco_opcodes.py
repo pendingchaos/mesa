@@ -224,7 +224,6 @@ opcode("p_wqm")
 opcode("p_is_helper")
 
 opcode("p_as_uniform")
-opcode("p_undef")
 
 # SOP2 instructions: 2 scalar inputs, 1 scalar output (+optional scc)
 SOP2_SCC = {

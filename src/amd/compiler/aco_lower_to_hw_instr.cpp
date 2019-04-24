@@ -827,9 +827,9 @@ void lower_to_hw_instr(Program* program)
             Pseudo_reduction_instruction* reduce = static_cast<Pseudo_reduction_instruction*>(instr.get());
             emit_reduction(&ctx, reduce->opcode, reduce->reduce_op, reduce->cluster_size,
                            reduce->getOperand(1).physReg(), // tmp
-                           reduce->getOperand(3).physReg(), // stmp
+                           reduce->getDefinition(1).physReg(), // stmp
                            reduce->getOperand(2).physReg(), // vtmp
-                           reduce->getOperand(4).physReg(), // sitmp
+                           reduce->getDefinition(2).physReg(), // sitmp
                            reduce->getOperand(0), reduce->getDefinition(0));
          } else {
             ctx.instructions.emplace_back(std::move(instr));

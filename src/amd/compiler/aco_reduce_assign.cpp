@@ -130,7 +130,7 @@ void setup_reduce_temp(Program* program)
          bld.use_iterator = true;
          bld.it = it;
          bld.forwards = true;
-         instr->getOperand(3) = bld.pseudo(aco_opcode::p_undef, bld.def(s2));
+         instr->getDefinition(1) = bld.def(s2);
 
          /* scalar identity temporary */
          if (instr->opcode == aco_opcode::p_exclusive_scan &&
@@ -138,16 +138,14 @@ void setup_reduce_temp(Program* program)
               op == imax32 || op == imax64 ||
               op == fmin32 || op == fmin64 ||
               op == fmax32 || op == fmax64)) {
-            instr->getOperand(4) = bld.pseudo(aco_opcode::p_undef, bld.def(s1));
+            instr->getDefinition(2) = bld.def(s1);
          }
 
          it = bld.it;
 
-         /* clobbers */
-         instr->num_definitions = 2;
-         instr->getDefinition(1) = Definition(scc, s1);
+         /* vcc clobber */
          if (op == iadd32 && program->chip_class < GFX9)
-            instr->getDefinition(instr->num_definitions++) = Definition(vcc, s2);
+            instr->getDefinition(4) = Definition(vcc, s2);
       }
    }
 }

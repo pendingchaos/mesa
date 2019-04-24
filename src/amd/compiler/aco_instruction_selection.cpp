@@ -4110,19 +4110,19 @@ void visit_intrinsic(isel_context *ctx, nir_intrinsic_instr *instr)
                unreachable("unknown reduce intrinsic");
          }
 
-         aco_ptr<Pseudo_reduction_instruction> reduce{create_instruction<Pseudo_reduction_instruction>(aco_op, Format::PSEUDO_REDUCTION, 5, 3)};
+         aco_ptr<Pseudo_reduction_instruction> reduce{create_instruction<Pseudo_reduction_instruction>(aco_op, Format::PSEUDO_REDUCTION, 3, 5)};
          reduce->getOperand(0) = Operand(src);
          // filled in by aco_reduce_assign.cpp, used internally as part of the
          // reduce sequence
          reduce->getOperand(1) = Operand();
          reduce->getOperand(2) = Operand();
-         reduce->getOperand(3) = Operand();
-         reduce->getOperand(4) = Operand();
 
          Temp tmp_dst = bld.tmp(dst.regClass());
          reduce->getDefinition(0) = Definition(tmp_dst);
-         reduce->getDefinition(1) = Definition();
+         reduce->getDefinition(1) = bld.def(s2); // used internally
          reduce->getDefinition(2) = Definition();
+         reduce->getDefinition(3) = Definition(scc, s1);
+         reduce->getDefinition(4) = Definition();
          reduce->reduce_op = reduce_op;
          reduce->cluster_size = cluster_size;
          ctx->block->instructions.emplace_back(std::move(reduce));
